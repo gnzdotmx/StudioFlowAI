@@ -1,0 +1,16 @@
+name: Generate Social Media Content Only
+description: Generate social media content from a transcript
+input: ./input/transcript_corrected.txt  # Can be overridden with the --input CLI flag
+output: ./output
+
+steps:
+  - name: Generate Social Media Content
+    module: sns
+    parameters:
+      # Input is inherited from workflow, but can be overridden here
+      # input: "./custom_transcript.txt"  # Uncomment to override workflow input
+      outputFileName: "social_media_content"     # Custom output file name (without extension)
+      model: "gpt-4o"        # OpenAI model to use
+      temperature: 0.7       # Higher values = more creative output
+      maxTokens: 8000        # Maximum tokens for response
+      language: "Spanish"    # Target language for social media content 

@@ -1,0 +1,56 @@
+name: Complete Video Processing Workflow
+description: Extract audio, split into segments, transcribe, format and correct transcription
+input: ./input/video.mp4  # Can be overridden with the --input CLI flag
+output: ./output
+# Results will be stored in a subfolder named like "Complete_Video_Processing_Workflow-20231015-120530"
+
+steps:
+  - name: Extract Audio
+    module: extract
+    parameters:
+      outputName: "audio.wav"  # Set consistent output file name
+      audioFormat: wav
+      sampleRate: 16000
+      channels: 1
+      
+  - name: Transcribe Audio
+    module: transcribe
+    parameters:
+      input: "${output}/audio.wav"  # This will be resolved to the actual output subfolder path
+      outputFileName: "transcript"  # Set consistent output file name
+      model: "whisper"
+      # Language is optional - if not specified, Whisper will auto-detect
+      # language: "Spanish"  # Uncomment to force a specific language
+      outputFormat: "srt"
+      whisperParams: "--model large-v2 --beam_size 5 --temperature 0.0 --best_of 5 --word_timestamps True --threads 16 --patience 1.0 --condition_on_previous_text True"
+
+  - name: Format Transcription
+    module: format
+    parameters:
+      input: "${output}/transcript.srt"  # Use the output from transcribe step
+      outputFileName: "transcript"   # Set consistent output file name
+      removePatterns: # Will remove these patterns from the transcript
+        - "Subtítulos realizados por la comunidad de Amara\\.org"
+      cleanFileSuffix: "_clean"
+
+  - name: Correct With ChatGPT
+    module: chatgpt
+    parameters:
+      input: "${output}/transcript_clean.txt"  # Use the output from format step
+      outputFileName: "transcript_corrected"    # Specific output file name (without extension)
+      promptTemplate: "./prompts/transcription_correction.yaml"  # Using YAML prompt template
+      targetLanguage: "auto"   # Auto-detect language
+      model: "gpt-4o"
+      temperature: 0.1
+      maxTokens: 4000
+      outputSuffix: "_corrected" 
+      
+  - name: Generate Social Media Content
+    module: sns
+    parameters:
+      input: "${output}/transcript_corrected.txt"  # Use the output from chatgpt step
+      outputFileName: "social_media_content"     # Set descriptive output file name
+      model: "gpt-4o"
+      temperature: 0.7  # Slightly higher temperature for creative content
+      maxTokens: 8000   # Increased for more detailed content
+      language: "Spanish"  # Generate content in Spanish 

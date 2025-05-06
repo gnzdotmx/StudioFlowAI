@@ -1,0 +1,16 @@
+name: Transcribe Audio Only
+description: Transcribe an audio file to text/subtitles
+input: ./input/audio.wav  # Can be overridden with the --input CLI flag
+output: ./output
+
+steps:
+  - name: Transcribe Audio
+    module: transcribe
+    parameters:
+      # Input is inherited from workflow, but can be overridden here
+      # input: "./custom_audio.wav"  # Uncomment to override workflow input
+      outputFileName: "my_transcript"  # Custom output file name (without extension)
+      model: "whisper"
+      outputFormat: "srt"              # Options: srt, txt, vtt, etc.
+      # language: "English"            # Uncomment to force a specific language
+      whisperParams: "--model large-v2 --beam_size 5 --temperature 0.0 --best_of 5 --word_timestamps True --threads 16" 

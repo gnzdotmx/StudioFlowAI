@@ -1,0 +1,19 @@
+name: Format Transcript Only
+description: Format a transcript file by removing unwanted patterns and timestamps
+input: ./input/transcript.srt  # Can be overridden with the --input CLI flag
+output: ./output
+
+steps:
+  - name: Format Transcript
+    module: format
+    parameters:
+      # Input is inherited from workflow, but can be overridden here
+      # input: "./custom_transcript.srt"  # Uncomment to override workflow input
+      outputFileName: "formatted_transcript"  # Custom output file name (without extension)
+      removePatterns:
+        - "Transcribed by gnzdotmx\\.ai"
+        - "Go Unlimited at gnzdotmx\\.ai"
+        - "This file is longer than 30 minutes"
+        - "gnzdotmx.ai"
+        - "Subtítulos realizados por la comunidad de Amara\\.org"
+      cleanFileSuffix: "_clean"  # Suffix added to formatted files (e.g., transcript_clean.txt) 

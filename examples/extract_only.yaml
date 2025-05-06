@@ -1,0 +1,15 @@
+name: Extract Audio Only
+description: Extract audio from a video file
+input: ./input/video.mp4  # Can be overridden with the --input CLI flag
+output: ./output
+
+steps:
+  - name: Extract Audio
+    module: extract
+    parameters:
+      # Input and output are inherited from workflow, but can be overridden here
+      # input: "./custom_input.mp4"  # Uncomment to override workflow input
+      outputName: "extracted_audio.wav"  # Custom output file name
+      audioFormat: wav
+      sampleRate: 16000
+      channels: 1 
