@@ -65,10 +65,10 @@ This will verify that all required external tools (like FFmpeg) are installed an
 To run a workflow defined in a YAML file:
 
 ```bash
-# Run with the input path defined in the workflow file
+# Run with the input path defined in the first step of the workflow
 studioflowai run -w path/to/workflow.yaml
 
-# Override the input directory or file
+# Override the input file path for the first step
 studioflowai run -w path/to/workflow.yaml -i /path/to/input/video.mp4
 ```
 
@@ -113,7 +113,6 @@ A complete workflow might look like this:
 ```yaml
 name: Complete Video Processing Workflow
 description: Extract audio, transcribe, format, correct and generate social media content
-input: ./input/video.mp4  # Can be overridden with the --input CLI flag
 output: ./output
 # Results will be stored in a timestamped subfolder
 
@@ -121,6 +120,7 @@ steps:
   - name: Extract Audio
     module: extract
     parameters:
+      input: ./input/video.mp4  # Can be overridden with the --input CLI flag
       outputName: "audio.wav"  # Set consistent output file name
       audioFormat: wav
       sampleRate: 16000

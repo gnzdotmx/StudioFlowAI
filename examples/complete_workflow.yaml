@@ -1,6 +1,5 @@
 name: Complete Video Processing Workflow
 description: Extract audio, split into segments, transcribe, format and correct transcription
-input: ./input/video.mp4  # Can be overridden with the --input CLI flag
 output: ./output
 # Results will be stored in a subfolder named like "Complete_Video_Processing_Workflow-20231015-120530"
 
@@ -8,7 +7,8 @@ steps:
   - name: Extract Audio
     module: extract
     parameters:
-      outputName: "audio.wav"  # Set consistent output file name
+      input: ./tests/video-test.mov # Input can be overridden with --input CLI flag
+      outputName: "audio.wav"   # Set consistent output file name
       audioFormat: wav
       sampleRate: 16000
       channels: 1

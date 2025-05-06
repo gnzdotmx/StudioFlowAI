@@ -30,7 +30,7 @@ type Step struct {
 type Workflow struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
-	Input       string `yaml:"input"`
+	Input       string `yaml:"input,omitempty"`
 	Output      string `yaml:"output"`
 	Steps       []Step `yaml:"steps"`
 
@@ -95,22 +95,21 @@ func (w *Workflow) ValidateBeforeRun() error {
 		return err
 	}
 
-	// Then check input and output paths
-	if w.Input == "" {
-		return fmt.Errorf("input path is required")
-	}
-
-	// Validate that input is a file, not a directory
-	fileInfo, err := os.Stat(w.Input)
-	if err != nil {
-		return fmt.Errorf("input file does not exist: %w", err)
-	}
-	if fileInfo.IsDir() {
-		return fmt.Errorf("input must be a file, not a directory")
-	}
-
+	// Then check output path
 	if w.Output == "" {
 		return fmt.Errorf("output path is required")
+	}
+
+	// Validate the input for the first step if global input is specified
+	if w.Input != "" {
+		// Validate that input is a file, not a directory
+		fileInfo, err := os.Stat(w.Input)
+		if err != nil {
+			return fmt.Errorf("input file does not exist: %w", err)
+		}
+		if fileInfo.IsDir() {
+			return fmt.Errorf("input must be a file, not a directory")
+		}
 	}
 
 	// Validate each step
@@ -140,9 +139,11 @@ func (w *Workflow) ValidateBeforeRun() error {
 			params[k] = v
 		}
 
-		if _, ok := params["input"]; !ok {
+		// Add input parameter if needed - but only for first step if global input is specified
+		if _, ok := params["input"]; !ok && (i == 0 && w.Input != "") {
 			params["input"] = w.Input
 		}
+
 		if _, ok := params["output"]; !ok {
 			params["output"] = w.Output
 		}
@@ -160,6 +161,13 @@ func (w *Workflow) ValidateBeforeRun() error {
 					params["input"] = filepath.Join(inputDir, inputFileName)
 					// During validation, this file might not exist yet, which is OK
 				}
+			}
+		}
+
+		// For first step, ensure it has input
+		if i == 0 {
+			if _, ok := params["input"]; !ok {
+				return fmt.Errorf("first step must specify input parameter when global input is not provided")
 			}
 		}
 
@@ -267,13 +275,14 @@ func (w *Workflow) Execute() error {
 			params[k] = v
 		}
 
-		// Add global input/output if not specified in step
+		// Add input parameter if needed - but only for first step if global input is specified
 		if _, ok := params["input"]; !ok {
-			// Special case for output-consuming modules - use output directory as input
-			if step.Module == "chatgpt" || step.Module == "format" || step.Module == "sns" {
-				params["input"] = outputDir
-			} else {
+			if i == 0 && w.Input != "" {
+				// First step - use global input if provided
 				params["input"] = w.Input
+			} else {
+				// For subsequent steps, default to the output directory if input not explicitly specified
+				params["input"] = outputDir
 			}
 		}
 
@@ -441,13 +450,14 @@ func (w *Workflow) ExecuteRetry(outputFolderPath, workflowName string) error {
 			params[k] = v
 		}
 
-		// Add global input/output if not specified in step
+		// Add input parameter if needed - but only for first step if global input is specified
 		if _, ok := params["input"]; !ok {
-			// Special case for output-consuming modules - use output directory as input
-			if step.Module == "chatgpt" || step.Module == "format" || step.Module == "sns" {
-				params["input"] = outputDir
-			} else {
+			if i == startStep && i == 0 && w.Input != "" {
+				// First step in retry - use global input if provided
 				params["input"] = w.Input
+			} else {
+				// For subsequent steps, default to output directory
+				params["input"] = outputDir
 			}
 		}
 
