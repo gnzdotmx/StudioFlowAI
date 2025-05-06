@@ -8,9 +8,12 @@ StudioFlowAI is a flexible, modular video processing tool that allows you to def
 
 - 🔊 Extracting audio from video files
 - ✂️ Splitting audio into segments
+- 🎙️ Transcribing audio using Whisper AI
 - 🧹 Cleaning and processing transcription files
 - 🤖 Correcting transcriptions using ChatGPT
 - 📱 Generating social media content for multiple platforms
+- 🎬 Creating intelligent suggestions for short video clips using ChatGPT
+- 📹 Automatically extracting short clips ready for TikTok, Reels, and YouTube Shorts
 
 The application is designed to be extensible, making it easy to add new processing modules in the future.
 
