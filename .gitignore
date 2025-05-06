@@ -1,25 +1,71 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# Project files
+output/
+tests/
+
+# Go specific
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
-
-# Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+/vendor/
+/bin/
+/studioflowai/studioflowai
+/studioflowai/studioflowai.exe
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
+# Go test and coverage
+/coverage.*
+/coverage/
 
-# Go workspace file
-go.work
-go.work.sum
+# Build output
+/dist/
+/build/
 
-# env file
+# Environment variables and keys
 .env
+*.pem
+*.key
+
+# Project output files and folders
+/output/
+/tmp/
+*.wav
+*.mp3
+*.mp4
+*.srt
+*_clean.txt
+*_corrected.txt
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+.vs/
+*~
+*.sublime-project
+*.sublime-workspace
+
+# Log files
+*.log
+logs/
+log/
+
+# Dependency directories
+node_modules/
+
+# Whisper output directories (optional)
+whisper.cpp/
+
+# Debug files
+__debug_bin
+
+# Local config that shouldn't be committed
+config.local.yaml 

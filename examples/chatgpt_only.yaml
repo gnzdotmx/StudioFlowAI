@@ -1,0 +1,18 @@
+name: Correct Transcript with ChatGPT Only
+description: Improve a transcript using ChatGPT
+input: ./input/transcript_clean.txt  # Can be overridden with the --input CLI flag
+output: ./output
+
+steps:
+  - name: Correct With ChatGPT
+    module: chatgpt
+    parameters:
+      # Input is inherited from workflow, but can be overridden here
+      # input: "./custom_transcript.txt"  # Uncomment to override workflow input
+      outputFileName: "transcript_corrected"    # Custom output file name (without extension)
+      promptTemplate: "./prompts/transcription_correction.yaml"  # Path to prompt template (YAML or text)
+      targetLanguage: "auto"   # Auto-detect language or specify one: "English", "Spanish", etc.
+      model: "gpt-4o"          # OpenAI model to use
+      temperature: 0.1         # Lower values = more deterministic output
+      maxTokens: 4000          # Maximum tokens for response
+      outputSuffix: "_corrected"  # Suffix for output file 

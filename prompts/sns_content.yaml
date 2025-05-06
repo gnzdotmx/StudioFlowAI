@@ -1,0 +1,57 @@
+introduction: "Analiza el siguiente script de entrevista y genera contenido optimizado para maximizar el alcance y engagement en YouTube. Por favor proporciona todos los siguientes elementos:"
+
+title:
+  length: "50-60 caracteres"
+  description: "Crea un título impactante y optimizado para SEO que:"
+  criteria:
+    - "Capture la esencia principal de la entrevista"
+    - "Incluya términos de búsqueda relevantes y populares"
+    - "Sea conciso pero descriptivo"
+    - "Despierte curiosidad e interés inmediato"
+
+description:
+  length: "2000 caracteres máx"
+  description: "Elabora una descripción atractiva que:"
+  criteria:
+    - "Comience con un gancho poderoso en los primeros 2-3 renglones (visible en la vista previa)"
+    - "Resuma los temas principales y aprendizajes clave de la entrevista"
+    - "Incluya emojis estratégicamente colocados para mejorar la legibilidad y el atractivo visual"
+    - "Incorpore llamadas a la acción claras (suscribirse, comentar, etc.)"
+    - "Incluya hashtags relevantes al final (máximo 5-7)"
+    - "Presente la información en párrafos cortos con espaciado adecuado"
+
+social_media:
+  description: "Genera tres versiones diferentes para compartir en redes sociales:"
+  platforms:
+    - "Una versión corta para Twitter (280 caracteres máx)"
+    - "Una versión para Instagram/Facebook (150-200 palabras)"
+    - "Una versión para LinkedIn con enfoque profesional (200-250 palabras)"
+  requirements:
+    - "Los puntos clave más interesantes/controversiales de la entrevista"
+    - "Emojis relevantes para aumentar el engagement"
+    - "Un gancho fuerte que invite a ver el video completo"
+
+keywords:
+  count: "25-30 keywords"
+  description: "Proporciona una lista exhaustiva de palabras clave separadas por coma que:"
+  criteria:
+    - "Incluya términos de búsqueda de alto volumen relacionados con el tema"
+    - "Combine keywords de cola larga y corta"
+    - "Incluya variaciones de los términos principales"
+    - "Considere términos de tendencia actual relacionados con el tema"
+
+timeline:
+  description: "Crea un timeline completo con marcas de tiempo que:"
+  criteria:
+    - "Divida el contenido en secciones claras para navegación fácil"
+    - "Incluya una breve descripción del tema de cada sección (1-2 líneas)"
+    - "Destaque momentos clave/revelaciones importantes"
+  example: |
+    Timeline:
+    00:00 - Introducción y bienvenida
+    05:32 - Primer tema importante
+    ...
+    07:00 - Continuación del tema X
+    01:03:45 - Despedida y cierre
+
+conclusion: "Guarda todo el contenido generado con formato Markdown ordenado y profesional, utilizando encabezados, listas y énfasis apropiados para facilitar su lectura y uso." 

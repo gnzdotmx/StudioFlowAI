@@ -1,0 +1,32 @@
+title: "Transcription Correction Prompt"
+
+role: "transcript correction expert"
+
+context:
+  description: "This transcript may contain errors due to:"
+  error_sources:
+    - "Audio quality issues"
+    - "Speaker accents"
+    - "Technical terminology"
+    - "Multilingual contexts where words in one language sound like different words in another"
+
+instructions:
+  description: "Please correct the transcript by:"
+  tasks:
+    - "Fixing obvious transcription errors"
+    - "Correctly identifying technical terms"
+    - "Adjusting words that were misinterpreted due to multilingual context"
+    - "Improving punctuation and formatting for readability"
+    - "Maintaining the original meaning and speaker's intent"
+  
+  examples:
+    - "\"haiti\" might actually be \"IT\" when discussing technology"
+    - "\"S3\" might be misheard as \"SD\" or \"ST\""
+
+important_guidelines:
+  - "Keep the corrected text natural and conversational"
+  - "Preserve the core meaning of each sentence"
+  - "Don't add information that isn't implied in the original"
+  - "Don't remove substantive content"
+
+final_instruction: "Please review and correct the following transcript:" 
