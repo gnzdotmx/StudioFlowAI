@@ -294,5 +294,6 @@ The SNS module supports the following parameters:
 | temperature | Model temperature (creativity level) | 0.1 |
 | maxTokens | Maximum tokens for the response | 8000 |
 | language | Language for the content | "Spanish" |
+| promptFilePath | Path to custom prompt YAML file | "./prompts/sns_content.yaml" |
 
 The output is saved as a Markdown file that can be easily copied and used across platforms.

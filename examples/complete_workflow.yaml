@@ -53,4 +53,5 @@ steps:
       model: "gpt-4o"
       temperature: 0.7  # Slightly higher temperature for creative content
       maxTokens: 8000   # Increased for more detailed content
-      language: "Spanish"  # Generate content in Spanish 
+      language: "Spanish"  # Generate content in Spanish
+      promptFilePath: "./prompts/sns_content.yaml"  # Custom prompt template file (optional) 

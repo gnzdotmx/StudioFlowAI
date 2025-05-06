@@ -13,4 +13,5 @@ steps:
       model: "gpt-4o"        # OpenAI model to use
       temperature: 0.7       # Higher values = more creative output
       maxTokens: 8000        # Maximum tokens for response
-      language: "Spanish"    # Target language for social media content 
+      language: "Spanish"    # Target language for social media content
+      promptFilePath: "./custom_prompts/my_sns_content.yaml"  # Custom prompt template file (optional) 
