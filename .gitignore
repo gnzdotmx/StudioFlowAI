@@ -1,6 +1,9 @@
 # Project files
 output/
 tests/
+prompts/
+examples/
+studioflowaibin
 
 # Go specific
 *.exe

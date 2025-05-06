@@ -14,6 +14,9 @@ import (
 var (
 	workflowFilePath  string
 	inputFileOverride string
+	retryFlag         bool
+	outputFolderPath  string
+	workflowName      string
 )
 
 var runCmd = &cobra.Command{
@@ -48,8 +51,23 @@ var runCmd = &cobra.Command{
 		}
 
 		// Execute the workflow - validation will happen inside Execute
-		if err := wf.Execute(); err != nil {
-			return fmt.Errorf("workflow execution failed: %w", err)
+		if retryFlag {
+			if outputFolderPath == "" {
+				return fmt.Errorf("output folder path is required when using retry flag")
+			}
+			if workflowName == "" {
+				return fmt.Errorf("workflow name is required when using retry flag")
+			}
+
+			// Get the failing step by inspecting the output folder
+			utils.LogInfo("Retrying workflow %s in output folder %s", workflowName, outputFolderPath)
+			if err := wf.ExecuteRetry(outputFolderPath, workflowName); err != nil {
+				return fmt.Errorf("workflow retry execution failed: %w", err)
+			}
+		} else {
+			if err := wf.Execute(); err != nil {
+				return fmt.Errorf("workflow execution failed: %w", err)
+			}
 		}
 
 		utils.LogInfo("Workflow completed successfully")
@@ -60,6 +78,9 @@ var runCmd = &cobra.Command{
 func init() {
 	runCmd.Flags().StringVarP(&workflowFilePath, "workflow", "w", "", "Path to workflow YAML file (required)")
 	runCmd.Flags().StringVarP(&inputFileOverride, "input", "i", "", "Input file path (overrides the one in workflow file)")
+	runCmd.Flags().BoolVarP(&retryFlag, "retry", "r", false, "Retry a failed workflow execution")
+	runCmd.Flags().StringVarP(&outputFolderPath, "output-folder", "o", "", "Output folder path with timestamp (required with --retry)")
+	runCmd.Flags().StringVarP(&workflowName, "workflow-name", "n", "", "Name of the workflow that failed (required with --retry)")
 	_ = runCmd.MarkFlagRequired("workflow")
 	rootCmd.AddCommand(runCmd)
 }

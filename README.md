@@ -74,6 +74,23 @@ studioflowai run -w path/to/workflow.yaml -i /path/to/input/video.mp4
 
 Each workflow run creates a timestamped subfolder within the output directory specified in the workflow file. For example, if your workflow output is set to `./output`, the results will be stored in a folder like `./output/Complete_Video_Processing_Workflow-20231015-120530/`.
 
+### ♻️ Retrying Failed Workflows
+
+If a workflow fails during execution (e.g., because it couldn't find a prompt template), you can retry it from the point of failure:
+
+```bash
+# Retry a failed workflow
+studioflowai run -w path/to/workflow.yaml --retry --output-folder ./output/Complete_Video_Processing_Workflow-20231015-120530 --workflow-name "Complete Video Processing Workflow"
+```
+
+The retry functionality will:
+1. Use the same output folder from the previous run
+2. Analyze the output folder to determine which steps completed successfully
+3. Resume execution from the first step that failed
+4. Continue with the remaining steps in the workflow
+
+This is especially useful for long-running workflows where you don't want to restart from the beginning.
+
 ### 🧹 Cleaning Up Old Workflow Runs
 
 You can clean up old workflow run directories with the cleanup command:
