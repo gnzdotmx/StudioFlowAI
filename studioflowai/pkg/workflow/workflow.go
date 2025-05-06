@@ -11,6 +11,7 @@ import (
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/chatgpt"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/extract"
+	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/extractshorts"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/format"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/split"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/transcribe"
@@ -327,6 +328,8 @@ func registerModules(registry *modules.ModuleRegistry) {
 	registry.Register(format.New())
 	registry.Register(chatgpt.New())
 	registry.Register(chatgpt.NewSNS())
+	registry.Register(chatgpt.NewShorts())
+	registry.Register(extractshorts.New())
 }
 
 // SetInputPath overrides the input path defined in the workflow
@@ -357,51 +360,67 @@ func (w *Workflow) ExecuteRetry(outputFolderPath, workflowName string) error {
 	outputDir := outputFolderPath
 	utils.LogDebug("Using existing results directory: %s", outputDir)
 
-	// Determine the last successful step by examining the output folder
-	// This is a simple heuristic - a more robust solution would be to store progress in a state file
-	lastSuccessfulStep := -1
+	// Find the step that matches the specified workflowName
+	startStep := 0
+	stepFound := false
 
-	// Check if each step has produced output files
 	for i, step := range w.Steps {
-		// Based on the step module, check for expected output files
-		// This is a simple check that will work for the workflow in the example
-		switch step.Module {
-		case "extract":
-			// Check if audio file exists
-			audioPath := filepath.Join(outputDir, "audio.wav")
-			if _, err := os.Stat(audioPath); err == nil {
-				lastSuccessfulStep = i
-			}
-		case "transcribe":
-			// Check if transcript file exists
-			transcriptPath := filepath.Join(outputDir, "transcript.srt")
-			if _, err := os.Stat(transcriptPath); err == nil {
-				lastSuccessfulStep = i
-			}
-		case "format":
-			// Check if formatted transcript exists
-			formattedPath := filepath.Join(outputDir, "transcript_clean.txt")
-			if _, err := os.Stat(formattedPath); err == nil {
-				lastSuccessfulStep = i
-			}
-		case "chatgpt":
-			// The prompt template was missing, so chatgpt step likely failed
-			// Check if corrected transcript exists
-			correctedPath := filepath.Join(outputDir, "transcript_corrected.txt")
-			if _, err := os.Stat(correctedPath); err == nil {
-				lastSuccessfulStep = i
-			}
-		case "sns":
-			// Check if social media content exists
-			snsPath := filepath.Join(outputDir, "social_media_content.txt")
-			if _, err := os.Stat(snsPath); err == nil {
-				lastSuccessfulStep = i
-			}
+		if step.Name == workflowName {
+			startStep = i
+			stepFound = true
+			break
 		}
 	}
 
-	// If we couldn't determine the last successful step, start from the beginning
-	startStep := lastSuccessfulStep + 1
+	if !stepFound {
+		// If no matching step name was found, fall back to the previous behavior
+		// Determine the last successful step by examining the output folder
+		lastSuccessfulStep := -1
+
+		// Check if each step has produced output files
+		for i, step := range w.Steps {
+			// Based on the step module, check for expected output files
+			// This is a simple check that will work for the workflow in the example
+			switch step.Module {
+			case "extract":
+				// Check if audio file exists
+				audioPath := filepath.Join(outputDir, "audio.wav")
+				if _, err := os.Stat(audioPath); err == nil {
+					lastSuccessfulStep = i
+				}
+			case "transcribe":
+				// Check if transcript file exists
+				transcriptPath := filepath.Join(outputDir, "transcript.srt")
+				if _, err := os.Stat(transcriptPath); err == nil {
+					lastSuccessfulStep = i
+				}
+			case "format":
+				// Check if formatted transcript exists
+				formattedPath := filepath.Join(outputDir, "transcript_clean.txt")
+				if _, err := os.Stat(formattedPath); err == nil {
+					lastSuccessfulStep = i
+				}
+			case "chatgpt":
+				// The prompt template was missing, so chatgpt step likely failed
+				// Check if corrected transcript exists
+				correctedPath := filepath.Join(outputDir, "transcript_corrected.txt")
+				if _, err := os.Stat(correctedPath); err == nil {
+					lastSuccessfulStep = i
+				}
+			case "sns":
+				// Check if social media content exists
+				snsPath := filepath.Join(outputDir, "social_media_content.txt")
+				if _, err := os.Stat(snsPath); err == nil {
+					lastSuccessfulStep = i
+				}
+			}
+		}
+
+		// If we couldn't determine the last successful step, start from the beginning
+		startStep = lastSuccessfulStep + 1
+		utils.LogWarning("No step with name '%s' found, using last successful step detection instead", workflowName)
+	}
+
 	if startStep >= len(w.Steps) {
 		utils.LogWarning("All steps appear to be complete, starting from the beginning")
 		startStep = 0

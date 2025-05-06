@@ -41,12 +41,12 @@ keywords:
     - "Considere términos de tendencia actual relacionados con el tema"
 
 timeline:
-  description: "Crea un timeline completo con marcas de tiempo que:"
+  description: "Crea un timeline completo para ser incluido en la descripción de la publicación de YouTube:"
   criteria:
     - "Divida el contenido en secciones claras para navegación fácil"
-    - "Incluya una breve descripción del tema de cada sección (1-2 líneas)"
+    - "Incluya una breve descripción del tema de cada sección usando SEO"
     - "Destaque momentos clave/revelaciones importantes"
-  example: |
+  output_format_example: |
     Timeline:
     00:00 - Introducción y bienvenida
     05:32 - Primer tema importante
