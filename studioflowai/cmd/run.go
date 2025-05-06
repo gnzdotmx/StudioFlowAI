@@ -96,7 +96,7 @@ func init() {
 	runCmd.Flags().StringVarP(&inputFileOverride, "input", "i", "", "Input file path (overrides the one in workflow file)")
 	runCmd.Flags().BoolVarP(&retryFlag, "retry", "r", false, "Retry a failed workflow execution")
 	runCmd.Flags().StringVarP(&outputFolderPath, "output-folder", "o", "", "Output folder path with timestamp (required with --retry)")
-	runCmd.Flags().StringVarP(&workflowName, "workflow-name", "n", "", "Name of the workflow that failed (required with --retry)")
+	runCmd.Flags().StringVarP(&workflowName, "workflow-name", "n", "", "Name of the specific step to resume from (required with --retry)")
 	_ = runCmd.MarkFlagRequired("workflow")
 	rootCmd.AddCommand(runCmd)
 }

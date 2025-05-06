@@ -42,7 +42,7 @@ steps:
       targetLanguage: "auto"   # Auto-detect language
       model: "gpt-4o"
       temperature: 0.1
-      maxTokens: 4000
+      maxTokens: 16000
       outputSuffix: "_corrected" 
       
   - name: Generate Social Media Content
@@ -51,7 +51,29 @@ steps:
       input: "${output}/transcript_corrected.txt"  # Use the output from chatgpt step
       outputFileName: "social_media_content"     # Set descriptive output file name
       model: "gpt-4o"
-      temperature: 0.7  # Slightly higher temperature for creative content
-      maxTokens: 8000   # Increased for more detailed content
+      temperature: 0.8  # Slightly higher temperature for creative content
+      maxTokens: 16000   # Increased for more detailed content
       language: "Spanish"  # Generate content in Spanish
-      promptFilePath: "./prompts/sns_content.yaml"  # Custom prompt template file (optional) 
+      promptFilePath: "./prompts/sns_content.yaml"  # Custom prompt template file (optional)
+      
+  - name: Generate Shorts Suggestions
+    module: shorts
+    parameters:
+      input: "${output}/transcript_corrected.txt"  # Use the corrected transcript
+      outputFileName: "shorts_suggestions"         # Output YAML file name (without extension)
+      model: "gpt-4o"
+      temperature: 0.8                             # Higher temperature for creative suggestions
+      maxTokens: 16000
+      minDuration: 30                              # Minimum clip duration in seconds
+      maxDuration: 60                              # Maximum clip duration in seconds
+      promptFilePath: "./prompts/shorts_prompts.yaml"  # Quality-focused prompt template that doesn't limit number of suggestions
+      
+  - name: Extract Shorts Clips
+    module: extractshorts
+    parameters:
+      input: "${output}/shorts_suggestions.yaml"   # Use the shorts suggestions YAML from previous step
+      videoFile: "./tests/video-test.mov"          # IMPORTANT: Should match the original input video
+      outputFormat: "mp4"                          # Output video format
+      ffmpegParams: "-c:v libx264 -c:a aac -b:a 128k"  # Optional: encode to reduce file size
+      quietFlag: true                              # Suppress verbose ffmpeg output
+      

@@ -1,0 +1,57 @@
+title: "High-Quality Short Video Clips Suggestion"
+role: "senior viral content strategist"
+description: "This prompt helps identify the most engaging parts of a video for high-performance short-form content"
+
+prompt: |
+  ## CRITICAL REQUIREMENTS:
+  1. COMPLETE COVERAGE: Analyze the ENTIRE transcript to the END. Stopping early is NOT acceptable.
+  2. SPANISH OUTPUT: Generate ALL content (titles, descriptions, tags) in SPANISH for Spanish-speaking audiences.
+  3. DISTRIBUTION: Include AT LEAST 1 clip per 5 minutes of video. Distribute evenly across beginning, middle, and end.
+  4. YAML FORMAT: Use EXACTLY the format shown in the example - respect indentation with spaces.
+
+  ## PROCESS:
+  1. Scan the entire transcript and note the final timestamp
+  2. Identify high-impact, memorable moments that work as standalone clips (%d-%d seconds)
+  3. Distribute your selections throughout the video (⅓ in each section)
+  4. MANDATORY: Include at least 1 clip from the final 25% of the video
+
+  ## REQUIRED YAML FORMAT (USE EXACTLY THIS FORMAT):
+  ```yaml
+  sourceVideo: ${source_video}
+  shorts:
+    - title: "Título atractivo"
+      startTime: "00:15:30"
+      endTime: "00:16:05"
+      description: "Descripción detallada que explica por qué este momento es interesante"
+      tags: "#Hashtag1, #Hashtag2, #Hashtag3"
+  ```
+
+  ## YAML SAFETY GUIDELINES (VERY IMPORTANT):
+  - RESPECT the INDENTATION exactly as shown in the example (two spaces)
+  - Use quotes for text with special characters like : or -
+  - Avoid line breaks within values
+  - DO NOT INCLUDE COMMENTS like "# Maximum 40 characters" in your final response
+  - VERIFY that your YAML is valid before submitting
+
+  ## SELECTION CRITERIA (at least TWO):
+  - Hook factor: Captures attention in first 3 seconds
+  - Viral potential: Motivates sharing/commenting
+  - Emotional impact: Generates strong emotional response
+  - Clear value: Offers specific insight or useful teaching
+  - Self-contained: Understandable without additional context
+  - Quotable: Contains memorable phrase for text overlay
+  - Complete story: Mini-narrative with beginning, development, conclusion
+  - Unique perspective: Surprising or uncommon point of view
+
+  ## MANDATORY FINAL VERIFICATION:
+  1. Did you analyze the COMPLETE transcript to the end?
+  2. Do you have clips from the beginning, MIDDLE AND END?
+  3. Are at least ⅓ of clips from the last third?
+  4. Is there at least one clip from the last 25% of the video?
+  5. Is the YAML format EXACTLY as shown in the example?
+  6. Does the indentation use TWO SPACES (not tabs)?
+  
+  ## IMPORTANT: Your response MUST begin with the required YAML format, without prior explanations.
+  
+  Transcript:
+  %s 
