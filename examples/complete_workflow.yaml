@@ -1,6 +1,5 @@
 name: Complete Video Processing Workflow
 description: Extract audio, split into segments, transcribe, format and correct transcription
-input: ./input/video.mp4  # Can be overridden with the --input CLI flag
 output: ./output
 # Results will be stored in a subfolder named like "Complete_Video_Processing_Workflow-20231015-120530"
 
@@ -8,7 +7,8 @@ steps:
   - name: Extract Audio
     module: extract
     parameters:
-      outputName: "audio.wav"  # Set consistent output file name
+      input: ./tests/video-test.mov # Input can be overridden with --input CLI flag
+      outputName: "audio.wav"   # Set consistent output file name
       audioFormat: wav
       sampleRate: 16000
       channels: 1
@@ -53,4 +53,5 @@ steps:
       model: "gpt-4o"
       temperature: 0.7  # Slightly higher temperature for creative content
       maxTokens: 8000   # Increased for more detailed content
-      language: "Spanish"  # Generate content in Spanish 
+      language: "Spanish"  # Generate content in Spanish
+      promptFilePath: "./prompts/sns_content.yaml"  # Custom prompt template file (optional) 

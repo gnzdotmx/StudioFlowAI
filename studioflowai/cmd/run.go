@@ -46,8 +46,24 @@ var runCmd = &cobra.Command{
 				return fmt.Errorf("input must be a file, not a directory: %s", inputFileOverride)
 			}
 
-			wf.SetInputPath(inputFileOverride)
-			utils.LogInfo("Using input file from CLI: %s", inputFileOverride)
+			// Either set the global input (legacy approach) or update the first step's input parameter
+			if len(wf.Steps) > 0 {
+				// Find the first step
+				firstStep := &wf.Steps[0]
+
+				// If we don't have parameters map yet, create it
+				if firstStep.Parameters == nil {
+					firstStep.Parameters = make(map[string]interface{})
+				}
+
+				// Set the input parameter for the first step
+				firstStep.Parameters["input"] = inputFileOverride
+				utils.LogInfo("Using input file from CLI for first step: %s", inputFileOverride)
+			} else {
+				// Fallback for legacy approach
+				wf.SetInputPath(inputFileOverride)
+				utils.LogInfo("Using input file from CLI: %s", inputFileOverride)
+			}
 		}
 
 		// Execute the workflow - validation will happen inside Execute

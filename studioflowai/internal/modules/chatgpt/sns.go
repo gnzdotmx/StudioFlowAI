@@ -28,6 +28,7 @@ type SNSParams struct {
 	MaxTokens        int     `json:"maxTokens"`        // Maximum tokens for the response (default: 8000)
 	RequestTimeoutMS int     `json:"requestTimeoutMs"` // API request timeout in milliseconds (default: 120000)
 	Language         string  `json:"language"`         // Language for the content (default: "Spanish")
+	PromptFilePath   string  `json:"promptFilePath"`   // Path to custom prompt YAML file (default: "./prompts/sns_content.yaml")
 }
 
 // New creates a new SNS module
@@ -90,6 +91,13 @@ func (m *SNSModule) Validate(params map[string]interface{}) error {
 		utils.LogWarning("OPENAI_API_KEY environment variable is not set.")
 	}
 
+	// If a custom prompt file path is provided, check if it exists
+	if p.PromptFilePath != "" {
+		if _, err := os.Stat(p.PromptFilePath); err != nil {
+			utils.LogWarning("Custom prompt file not found at %s, will use default if needed", p.PromptFilePath)
+		}
+	}
+
 	return nil
 }
 
@@ -116,6 +124,9 @@ func (m *SNSModule) Execute(ctx context.Context, params map[string]interface{}) 
 	if p.RequestTimeoutMS == 0 {
 		p.RequestTimeoutMS = 120000 // 120 seconds default (increased for larger content)
 	}
+	if p.PromptFilePath == "" {
+		p.PromptFilePath = "./prompts/sns_content.yaml"
+	}
 
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(p.Output, 0755); err != nil {
@@ -123,7 +134,7 @@ func (m *SNSModule) Execute(ctx context.Context, params map[string]interface{}) 
 	}
 
 	// Get the SNS prompt
-	snsPrompt := getSNSPrompt()
+	snsPrompt := getSNSPrompt(p.PromptFilePath)
 
 	// Verify input exists at execution time (now that previous steps have completed)
 	fileInfo, err := os.Stat(p.Input)
@@ -223,9 +234,9 @@ func (m *SNSModule) processSNSFile(ctx context.Context, inputPath, outputPath, p
 }
 
 // getSNSPrompt returns the prompt for SNS content generation
-func getSNSPrompt() string {
+func getSNSPrompt(promptFilePath string) string {
 	// Check if a custom prompt template exists
-	customPromptPath := "./prompts/sns_content.yaml"
+	customPromptPath := promptFilePath
 	if _, err := os.Stat(customPromptPath); err == nil {
 		// Read the YAML file
 		data, err := os.ReadFile(customPromptPath)
@@ -233,7 +244,7 @@ func getSNSPrompt() string {
 			// Try to parse as YAML
 			yamlPrompt, err := formatSNSYAMLPrompt(data)
 			if err == nil {
-				utils.LogDebug("Using custom SNS prompt template from YAML file")
+				utils.LogDebug("Using custom SNS prompt template from YAML file: %s", customPromptPath)
 				return yamlPrompt
 			}
 			utils.LogWarning("Failed to parse YAML prompt: %v, falling back to default", err)
