@@ -45,6 +45,7 @@ type ShortClip struct {
 	EndTime     string `yaml:"endTime"`     // End timestamp in HH:MM:SS format
 	Description string `yaml:"description"` // Additional description/context
 	Tags        string `yaml:"tags"`        // Suggested tags for the short
+	Question    string `yaml:"question"`    // Question to ask the user
 }
 
 // ShortsOutput defines the structure of the shorts YAML output
@@ -78,12 +79,31 @@ func (m *ShortsModule) Validate(params map[string]interface{}) error {
 		return err
 	}
 
-	if p.Input == "" {
-		return fmt.Errorf("input path is required")
+	// Validate input path
+	if err := utils.ValidateInputPath(p.Input, p.Output, p.InputFileName); err != nil {
+		return err
 	}
 
-	if p.Output == "" {
-		return fmt.Errorf("output path is required")
+	// Validate output path
+	if err := utils.ValidateOutputPath(p.Output); err != nil {
+		return err
+	}
+
+	// Check if the API key is set - just warn but don't error
+	if os.Getenv("OPENAI_API_KEY") == "" {
+		utils.LogWarning("OPENAI_API_KEY environment variable is not set. A placeholder file will be generated.")
+	}
+
+	// Check if the prompt template file exists
+	if p.PromptFilePath != "" {
+		if _, err := os.Stat(p.PromptFilePath); os.IsNotExist(err) {
+			return fmt.Errorf("prompt template file %s does not exist", p.PromptFilePath)
+		}
+	}
+
+	// Validate duration parameters
+	if p.MinDuration > 0 && p.MaxDuration > 0 && p.MinDuration > p.MaxDuration {
+		return fmt.Errorf("minDuration (%d) cannot be greater than maxDuration (%d)", p.MinDuration, p.MaxDuration)
 	}
 
 	return nil
@@ -122,8 +142,11 @@ func (m *ShortsModule) Execute(ctx context.Context, params map[string]interface{
 		p.OutputFileName = "shorts_suggestions"
 	}
 
+	// Resolve the input path if it contains ${output}
+	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
+
 	// Handle input path resolution
-	inputPath, err := getInputFilePath(p.Input, p.FilePattern, p.InputFileName)
+	inputPath, err := getInputFilePath(resolvedInput, p.FilePattern, p.InputFileName)
 	if err != nil {
 		return err
 	}
@@ -156,6 +179,7 @@ func (m *ShortsModule) Execute(ctx context.Context, params map[string]interface{
 					EndTime:     "00:00:15",
 					Description: "Please set the OPENAI_API_KEY environment variable to generate shorts suggestions.",
 					Tags:        "api-key-missing, setup-required",
+					Question:    "Please set the OPENAI_API_KEY environment variable to generate shorts suggestions.",
 				},
 			},
 		}
@@ -183,9 +207,11 @@ func (m *ShortsModule) Execute(ctx context.Context, params map[string]interface{
 			return fmt.Errorf("failed to load prompt template: %w", err)
 		}
 		promptTemplate = promptData.Prompt
+		utils.LogInfo("Using prompt template: %s", p.PromptFilePath)
 	} else {
 		// Default prompt if no template is provided
 		promptTemplate = getShortsPrompt()
+		utils.LogInfo("Using default prompt template")
 	}
 
 	// Create prompt with transcript

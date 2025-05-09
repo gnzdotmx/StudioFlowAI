@@ -45,42 +45,23 @@ func (m *Module) Validate(params map[string]interface{}) error {
 		return err
 	}
 
-	if p.Input == "" {
-		return fmt.Errorf("input path is required")
+	// Validate input path
+	if err := utils.ValidateInputPath(p.Input, p.Output, p.InputFileName); err != nil {
+		return err
 	}
 
-	if p.Output == "" {
-		return fmt.Errorf("output path is required")
+	// Validate output path
+	if err := utils.ValidateOutputPath(p.Output); err != nil {
+		return err
 	}
 
-	// During validation, we don't check file existence for input files inside an output directory,
-	// as they'll be created during workflow execution.
-	// Also, don't validate against inputFileName as it may not be resolved to an actual path yet.
-	// Just ensure parameters are present.
-	if p.InputFileName != "" {
-		// If we have a specific filename, validation is sufficient
-		// Skip file existence check as this could be created during workflow execution
-		return nil
-	}
-
-	// Only validate file existence for external input paths
-	_, err := os.Stat(p.Input)
-	if err != nil {
-		// For files that don't exist, check if they might be in the output directory
-		// as they could be created by previous steps
-		if strings.Contains(p.Input, p.Output) ||
-			strings.Contains(p.Input, "output") ||
-			filepath.Base(p.Input) == "transcript.srt" {
-			// Skip validation for expected output files
-			return nil
+	// Validate file extension for input file
+	if p.InputFileName == "" {
+		// Only validate extension if we're not using inputFileName
+		// as the actual file might not exist yet during workflow execution
+		if err := utils.ValidateFileExtension(p.Input, []string{".txt", ".srt"}); err != nil {
+			return err
 		}
-		return fmt.Errorf("input file does not exist: %w", err)
-	}
-
-	// Check if it's a directory but no inputFileName is provided
-	fileInfo, err := os.Stat(p.Input)
-	if err == nil && fileInfo.IsDir() && p.InputFileName == "" {
-		return fmt.Errorf("input is a directory but no inputFileName specified")
 	}
 
 	return nil
@@ -103,22 +84,25 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
+	// Resolve the input path if it contains ${output}
+	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
+
 	// Verify input exists at execution time (now that previous steps have completed)
-	fileInfo, err := os.Stat(p.Input)
+	fileInfo, err := os.Stat(resolvedInput)
 	if err != nil {
 		return fmt.Errorf("input file not found: %w", err)
 	}
 
 	if fileInfo.IsDir() {
-		return fmt.Errorf("input must be a file, not a directory: %s", p.Input)
+		return fmt.Errorf("input must be a file, not a directory: %s", resolvedInput)
 	}
 
 	// Process the single file
-	filename := filepath.Base(p.Input)
+	filename := filepath.Base(resolvedInput)
 
 	// Check if the file is a text file, not binary
-	if !utils.IsTextFile(p.Input) {
-		return fmt.Errorf("file %s appears to be binary, not a text file - skipping", p.Input)
+	if !utils.IsTextFile(resolvedInput) {
+		return fmt.Errorf("file %s appears to be binary, not a text file - skipping", resolvedInput)
 	}
 
 	// Determine output filename
@@ -131,18 +115,18 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 
 	outputPath := filepath.Join(p.Output, outputBaseName+p.CleanFileSuffix+".txt")
 
-	if err := m.cleanFile(p.Input, outputPath, p); err != nil {
+	if err := m.cleanFile(resolvedInput, outputPath, p); err != nil {
 		return err
 	}
 
 	// Create the additional formats for SRT files
-	if filepath.Ext(p.Input) == ".srt" {
-		if err := m.createCleanFormats(p.Input, p.Output, p); err != nil {
+	if filepath.Ext(resolvedInput) == ".srt" {
+		if err := m.createCleanFormats(resolvedInput, p.Output, p); err != nil {
 			return err
 		}
 	}
 
-	utils.LogSuccess("Cleaned %s -> %s", p.Input, outputPath)
+	utils.LogSuccess("Cleaned %s -> %s", resolvedInput, outputPath)
 
 	return nil
 }

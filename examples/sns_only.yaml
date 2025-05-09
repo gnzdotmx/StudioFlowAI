@@ -1,17 +1,34 @@
-name: Generate Social Media Content Only
+name: Generate Social Media Content
 description: Generate social media content from a transcript
-input: ./input/transcript_corrected.txt  # Can be overridden with the --input CLI flag
 output: ./output
+# Results will be stored in a subfolder named like "Generate_Social_Media_Content-20231015-120530"
 
 steps:
-  - name: Generate Social Media Content
+  - name: Generate SNS Content
     module: sns
     parameters:
-      # Input is inherited from workflow, but can be overridden here
-      # input: "./custom_transcript.txt"  # Uncomment to override workflow input
-      outputFileName: "social_media_content"     # Custom output file name (without extension)
-      model: "gpt-4o"        # OpenAI model to use
-      temperature: 0.7       # Higher values = more creative output
-      maxTokens: 8000        # Maximum tokens for response
-      language: "Spanish"    # Target language for social media content
-      promptFilePath: "./custom_prompts/my_sns_content.yaml"  # Custom prompt template file (optional) 
+      # Input: Transcript file to process
+      # Can be specified in three ways:
+      # 1. Via CLI using -i flag: studioflowai run -w sns_only.yaml -i ./input/transcript.srt
+      # 2. In the workflow file (as shown below)
+      # 3. From a previous step's output in the workflow
+      input: "./input/transcript.srt"                # Transcript file to process (REQUIRED - replace with your transcript path)
+      # Output: Social media content in output directory
+      outputFileName: "sns_content"                  # Will create sns_content.yaml in output directory
+      # Optional: Customize the content generation
+      # maxLength: 280                              # Maximum length for each post
+      # numPosts: 5                                 # Number of posts to generate
+      # style: "professional"                       # Writing style (professional, casual, etc.)
+      # language: "English"                         # Output language
+      # hashtags: ["#tech", "#ai"]                  # Custom hashtags to include
+
+# Example usage:
+# 1. Using CLI input:
+#    studioflowai run -w sns_only.yaml -i ./input/transcript.srt
+#
+# 2. Using workflow input parameter:
+#    studioflowai run -w sns_only.yaml
+#
+# 3. As part of a larger workflow:
+#    - First run the transcribe module to get transcript
+#    - Then run this workflow to generate social media content 

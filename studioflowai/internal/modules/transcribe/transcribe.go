@@ -44,12 +44,14 @@ func (m *Module) Validate(params map[string]interface{}) error {
 		return err
 	}
 
-	if p.Input == "" {
-		return fmt.Errorf("input path is required")
+	// Validate input path
+	if err := utils.ValidateInputPath(p.Input, p.Output, ""); err != nil {
+		return err
 	}
 
-	if p.Output == "" {
-		return fmt.Errorf("output path is required")
+	// Validate output path
+	if err := utils.ValidateOutputPath(p.Output); err != nil {
+		return err
 	}
 
 	// During validation, we don't check file existence for input files inside an output directory,
@@ -62,14 +64,17 @@ func (m *Module) Validate(params map[string]interface{}) error {
 		return nil
 	}
 
-	// Ensure the input file or directory exists
-	if _, err := os.Stat(p.Input); os.IsNotExist(err) {
-		return fmt.Errorf("input path %s does not exist", p.Input)
+	// Validate audio file extension if input is a file
+	fileInfo, err := os.Stat(p.Input)
+	if err == nil && !fileInfo.IsDir() {
+		if err := utils.ValidateFileExtension(p.Input, []string{".wav", ".mp3", ".m4a", ".aac"}); err != nil {
+			return err
+		}
 	}
 
 	// Check if the selected model is installed - but don't fail if not
 	if p.Model == "whisper" {
-		if _, err := exec.LookPath("whisper"); err != nil {
+		if err := utils.ValidateRequiredDependency("whisper"); err != nil {
 			utils.LogWarning("whisper CLI not found in PATH; transcription module will look for existing transcription files instead")
 		}
 	} else if p.Model != "" && p.Model != "external" {
@@ -114,29 +119,32 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 	// If the model isn't installed, look for existing transcription files
 	if !modelInstalled {
 		utils.LogWarning("Transcription model not available, looking for existing transcription files")
-		return m.findExistingTranscripts(ctx, p)
+		return m.findExistingTranscripts(p)
 	}
 
+	// Resolve the input path if it contains ${output}
+	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
+
 	// Log the exact path we're looking for
-	utils.LogVerbose("Looking for input file: %s", p.Input)
+	utils.LogVerbose("Looking for input file: %s", resolvedInput)
 
 	// Check if input is a directory or a file
-	fileInfo, err := os.Stat(p.Input)
+	fileInfo, err := os.Stat(resolvedInput)
 	if err != nil {
 		// Try to handle common path variants
 		altPaths := []string{
 			// Try without leading ./
-			strings.TrimPrefix(p.Input, "./"),
+			strings.TrimPrefix(resolvedInput, "./"),
 			// Try with absolute path
-			filepath.Join(filepath.Dir(p.Output), filepath.Base(p.Input)),
+			filepath.Join(filepath.Dir(p.Output), filepath.Base(resolvedInput)),
 			// Try in output directory
-			filepath.Join(p.Output, filepath.Base(p.Input)),
+			filepath.Join(p.Output, filepath.Base(resolvedInput)),
 		}
 
 		for _, altPath := range altPaths {
 			utils.LogDebug("Trying alternative path: %s", altPath)
 			if fileInfo, err = os.Stat(altPath); err == nil {
-				p.Input = altPath
+				resolvedInput = altPath
 				utils.LogVerbose("Found input file at: %s", altPath)
 				break
 			}
@@ -153,7 +161,7 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 	}
 
 	// Process a single file
-	return m.processFile(ctx, p.Input, p)
+	return m.processFile(ctx, resolvedInput, p)
 }
 
 // processDirectory processes all matching audio files in a directory
@@ -246,19 +254,13 @@ func (m *Module) buildWhisperCommand(inputFile, outputFile string, p Params) []s
 	// Add the input file as the first argument
 	args = append([]string{inputFile}, args...)
 
-	// Only add language if explicitly specified
-	// if p.Language != "" && !containsParam(args, "--language") {
-	// 	args = append(args, "--language", p.Language)
-	// }
-
-	// Check if output format is already specified
+	// Set output directory and format
+	outputDir := filepath.Dir(outputFile)
+	if !containsParam(args, "--output_dir") {
+		args = append(args, "--output_dir", outputDir)
+	}
 	if !containsParam(args, "--output_format") {
 		args = append(args, "--output_format", p.OutputFormat)
-	}
-
-	// Check if output directory is already specified
-	if !containsParam(args, "--output_dir") {
-		args = append(args, "--output_dir", p.Output)
 	}
 
 	return args
@@ -275,7 +277,7 @@ func containsParam(args []string, param string) bool {
 }
 
 // findExistingTranscripts tries to find existing transcription files that match the audio files
-func (m *Module) findExistingTranscripts(ctx context.Context, p Params) error {
+func (m *Module) findExistingTranscripts(p Params) error {
 	// This is the fallback when transcription tools aren't installed
 	// Check if there are already transcription files for the audio
 	baseDir := filepath.Dir(p.Input)

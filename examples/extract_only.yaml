@@ -1,15 +1,30 @@
-name: Extract Audio Only
+name: Extract Audio from Video
 description: Extract audio from a video file
-input: ./input/video.mp4  # Can be overridden with the --input CLI flag
 output: ./output
+# Results will be stored in a subfolder named like "Extract_Audio_from_Video-20231015-120530"
 
 steps:
   - name: Extract Audio
     module: extract
     parameters:
-      # Input and output are inherited from workflow, but can be overridden here
-      # input: "./custom_input.mp4"  # Uncomment to override workflow input
-      outputName: "extracted_audio.wav"  # Custom output file name
-      audioFormat: wav
-      sampleRate: 16000
-      channels: 1 
+      # Input: Video file to process
+      # Can be specified in three ways:
+      # 1. Via CLI using -i flag: studioflowai run -w extract_only.yaml -i ./input/video.mp4
+      # 2. In the workflow file (as shown below)
+      # 3. From a previous step's output in the workflow
+      input: "./input/video.mp4"                     # Video file to process (REQUIRED - replace with your video path)
+      # Output: Audio file in output directory
+      outputFileName: "audio"                        # Will create audio.wav in output directory
+      outputFormat: "wav"                           # Output audio format (wav, mp3, etc.)
+      ffmpegParams: "-ac 2 -ar 44100"               # FFmpeg parameters for audio extraction
+
+# Example usage:
+# 1. Using CLI input:
+#    studioflowai run -w extract_only.yaml -i ./input/video.mp4
+#
+# 2. Using workflow input parameter:
+#    studioflowai run -w extract_only.yaml
+#
+# 3. As part of a larger workflow:
+#    - First run this workflow to extract audio
+#    - Then run the transcribe module to get transcript 

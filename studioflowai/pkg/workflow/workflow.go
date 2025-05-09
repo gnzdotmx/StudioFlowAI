@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules"
+	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/addtext"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/chatgpt"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/extract"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/extractshorts"
@@ -89,6 +90,48 @@ func (w *Workflow) ValidateStructure() error {
 	return nil
 }
 
+// ModuleIO defines the expected inputs and outputs for a module
+type ModuleIO struct {
+	Inputs  []string
+	Outputs []string
+}
+
+// ModuleIORegistry maps module names to their expected inputs and outputs
+var ModuleIORegistry = map[string]ModuleIO{
+	"extract": {
+		Inputs:  []string{"video"},
+		Outputs: []string{"audio.wav"},
+	},
+	"transcribe": {
+		Inputs:  []string{"audio.wav"},
+		Outputs: []string{"transcript.srt"},
+	},
+	"format": {
+		Inputs:  []string{"transcript.srt"},
+		Outputs: []string{"transcript_clean.txt"},
+	},
+	"chatgpt": {
+		Inputs:  []string{"transcript_clean.txt"},
+		Outputs: []string{"transcript_corrected.txt"},
+	},
+	"sns": {
+		Inputs:  []string{"transcript_corrected.txt"},
+		Outputs: []string{"social_media_content.txt"},
+	},
+	"shorts": {
+		Inputs:  []string{"transcript_corrected.txt"},
+		Outputs: []string{"shorts_suggestions.yaml"},
+	},
+	"extractshorts": {
+		Inputs:  []string{"shorts_suggestions.yaml", "video"},
+		Outputs: []string{"shorts/"},
+	},
+	"addtext": {
+		Inputs:  []string{"shorts_suggestions.yaml", "video"},
+		Outputs: []string{"shorts_with_text/"},
+	},
+}
+
 // ValidateBeforeRun performs a complete validation including modules
 func (w *Workflow) ValidateBeforeRun() error {
 	// First check basic structure
@@ -96,24 +139,197 @@ func (w *Workflow) ValidateBeforeRun() error {
 		return err
 	}
 
-	// Then check output path
-	if w.Output == "" {
-		return fmt.Errorf("output path is required")
-	}
-
 	// Validate the input for the first step if global input is specified
 	if w.Input != "" {
 		// Validate that input is a file, not a directory
 		fileInfo, err := os.Stat(w.Input)
 		if err != nil {
-			return fmt.Errorf("input file does not exist: %w", err)
+			return &utils.ValidationError{
+				Field:   "input",
+				Message: "input file does not exist",
+				Err:     err,
+			}
 		}
 		if fileInfo.IsDir() {
-			return fmt.Errorf("input must be a file, not a directory")
+			return &utils.ValidationError{
+				Field:   "input",
+				Message: "input must be a file, not a directory",
+			}
+		}
+
+		// Only validate video file extension for video-related modules
+		if len(w.Steps) > 0 {
+			firstModule := w.Steps[0].Module
+			if firstModule == "extract" || firstModule == "extractshorts" || firstModule == "addtext" {
+				ext := strings.ToLower(filepath.Ext(w.Input))
+				validVideoExts := map[string]bool{
+					".mp4":  true,
+					".mov":  true,
+					".avi":  true,
+					".mkv":  true,
+					".webm": true,
+				}
+				if !validVideoExts[ext] {
+					return &utils.ValidationError{
+						Field:   "input",
+						Message: "input file must be a video file (supported formats: mp4, mov, avi, mkv, webm)",
+					}
+				}
+			}
 		}
 	}
 
+	// Determine the base output directory from the input file
+	var baseOutputDir string
+	if w.Input != "" {
+		// Use the input file's directory
+		baseOutputDir = filepath.Join(filepath.Dir(w.Input), "output")
+	} else if len(w.Steps) > 0 {
+		// Use the first step's input directory
+		if input, ok := w.Steps[0].Parameters["input"].(string); ok {
+			baseOutputDir = filepath.Join(filepath.Dir(input), "output")
+		} else {
+			return &utils.ValidationError{
+				Field:   "output",
+				Message: "could not determine output directory: no input file specified",
+			}
+		}
+	} else {
+		return &utils.ValidationError{
+			Field:   "output",
+			Message: "could not determine output directory: no steps defined",
+		}
+	}
+
+	// Create a timestamp-based subfolder for this run
+	timestamp := time.Now().Format("20060102-150405")
+	runName := fmt.Sprintf("%s-%s", strings.ReplaceAll(w.Name, " ", "_"), timestamp)
+	outputDir := filepath.Join(baseOutputDir, runName)
+
+	// Track available outputs for chain validation
+	availableOutputs := make(map[string]bool)
+	if w.Input != "" {
+		availableOutputs["video"] = true
+	}
+
 	// Validate each step
+	for i, step := range w.Steps {
+		if step.Module == "" {
+			return &utils.ValidationError{
+				Field:   fmt.Sprintf("step_%d", i+1),
+				Message: "module name is required",
+			}
+		}
+
+		// Verify the module exists
+		module, err := w.registry.Get(step.Module)
+		if err != nil {
+			return &utils.ValidationError{
+				Field:   fmt.Sprintf("step_%d", i+1),
+				Message: fmt.Sprintf("module %s not found", step.Module),
+				Err:     err,
+			}
+		}
+
+		// Get module IO requirements
+		moduleIO, ok := ModuleIORegistry[step.Module]
+		if !ok {
+			return &utils.ValidationError{
+				Field:   fmt.Sprintf("step_%d", i+1),
+				Message: fmt.Sprintf("unknown module type %s", step.Module),
+			}
+		}
+
+		// Add global input/output if not specified in step params
+		params := make(map[string]interface{})
+		for k, v := range step.Parameters {
+			params[k] = v
+		}
+
+		// For first step, always use the CLI input if provided
+		if i == 0 {
+			if w.Input != "" {
+				params["input"] = w.Input
+				utils.LogDebug("Using CLI input file: %s", w.Input)
+			}
+		}
+
+		// Special handling for video-related modules
+		if step.Module == "extractshorts" || step.Module == "addtext" {
+			// For extractshorts, require videoFile
+			if step.Module == "extractshorts" {
+				if w.Input != "" {
+					params["videoFile"] = w.Input
+					utils.LogDebug("Using CLI input as videoFile: %s", w.Input)
+				} else if step.Parameters["videoFile"] != nil {
+					params["videoFile"] = step.Parameters["videoFile"].(string)
+					utils.LogDebug("Using videoFile from step parameters: %s", step.Parameters["videoFile"])
+				} else {
+					return &utils.ValidationError{
+						Field:   fmt.Sprintf("step_%d", i+1),
+						Message: "videoFile is required for extractshorts module",
+					}
+				}
+			}
+			// For addtext, only require videoFile if it's not after extractshorts
+			if step.Module == "addtext" {
+				// Check if we have shorts output from previous step
+				if !availableOutputs["shorts/"] {
+					// Only require videoFile if we don't have shorts output
+					if w.Input != "" {
+						params["videoFile"] = w.Input
+						utils.LogDebug("Using CLI input as videoFile: %s", w.Input)
+					} else if step.Parameters["videoFile"] != nil {
+						params["videoFile"] = step.Parameters["videoFile"].(string)
+						utils.LogDebug("Using videoFile from step parameters: %s", step.Parameters["videoFile"])
+					}
+				}
+			}
+		}
+
+		// Always set the output parameter
+		params["output"] = outputDir
+
+		// Validate module parameters
+		if err := module.Validate(params); err != nil {
+			return &utils.ValidationError{
+				Field:   fmt.Sprintf("step_%d", i+1),
+				Message: fmt.Sprintf("invalid parameters for module %s", step.Module),
+				Err:     err,
+			}
+		}
+
+		// Validate that all required inputs are available
+		for _, input := range moduleIO.Inputs {
+			if !availableOutputs[input] {
+				return &utils.ValidationError{
+					Field:   fmt.Sprintf("step_%d", i+1),
+					Message: fmt.Sprintf("required input %s not available from previous steps", input),
+				}
+			}
+		}
+
+		// Add this step's outputs to available outputs
+		for _, output := range moduleIO.Outputs {
+			availableOutputs[output] = true
+		}
+	}
+
+	return nil
+}
+
+// ValidateForRetry performs validation for retry operations, skipping input file checks
+func (w *Workflow) ValidateForRetry(workflowName string) error {
+	// Check basic structure
+	if err := w.ValidateStructure(); err != nil {
+		return err
+	}
+
+	// Initialize validate flag before the loop
+	validate := false
+	foundStep := false
+
+	// Validate each step's module existence
 	for i, step := range w.Steps {
 		if step.Module == "" {
 			return fmt.Errorf("module name is required for step %d", i+1)
@@ -125,87 +341,51 @@ func (w *Workflow) ValidateBeforeRun() error {
 			return fmt.Errorf("step %d: %w", i+1, err)
 		}
 
-		// Add global input/output if not specified in step params
-		params := make(map[string]interface{})
-		for k, v := range step.Parameters {
-			// Handle any special parameter substitutions during validation
-			if str, ok := v.(string); ok {
-				// Handle paths that reference the output directory
-				if strings.Contains(str, "./output/") || str == "./output" {
-					// Mark these paths as being in the output directory
-					// Individual modules will handle validation appropriately
-					fmt.Printf("Note: Step %d (%s) uses output from previous steps\n", i+1, step.Name)
-				}
-			}
-			params[k] = v
-		}
-
-		// Add input parameter if needed - but only for first step if global input is specified
-		if _, ok := params["input"]; !ok && (i == 0 && w.Input != "") {
-			params["input"] = w.Input
-		}
-
-		if _, ok := params["output"]; !ok {
-			params["output"] = w.Output
-		}
-
-		// Special case handling for modules that need to combine input directory and filename
-		// Similar to what we do in Execute(), handle directory+inputFileName combo during validation
-		if inputDir, ok := params["input"].(string); ok {
-			// Check if the input is a directory and inputFileName is set
-			inputFileInfo, err := os.Stat(inputDir)
-			// During validation, the output directory might not exist yet
-			// Skip the check if the directory doesn't exist
-			if err == nil && inputFileInfo.IsDir() {
-				if inputFileName, ok := params["inputFileName"].(string); ok {
-					// Construct the full file path by joining the directory and filename
-					params["input"] = filepath.Join(inputDir, inputFileName)
-					// During validation, this file might not exist yet, which is OK
-				}
-			}
-		}
-
-		// For first step, ensure it has input
-		if i == 0 {
-			if _, ok := params["input"]; !ok {
-				return fmt.Errorf("first step must specify input parameter when global input is not provided")
-			}
+		// Set validate flag when we find the target step
+		if step.Name == workflowName {
+			validate = true
+			foundStep = true
 		}
 
 		// Validate module parameters
-		if err := module.Validate(params); err != nil {
-			return fmt.Errorf("invalid parameters for step %d (%s): %w", i+1, step.Module, err)
+		if validate {
+			// Create a new params map to avoid modifying the original
+			params := make(map[string]interface{})
+			for k, v := range step.Parameters {
+				params[k] = v
+			}
+
+			// Handle input file for video-related modules
+			if step.Module == "extractshorts" || step.Module == "addtext" {
+				if w.Input != "" {
+					params["videoFile"] = w.Input
+					utils.LogDebug("Using CLI input as videoFile: %s", w.Input)
+				}
+			}
+
+			// Always set the output parameter
+			if w.Output != "" {
+				params["output"] = w.Output
+				utils.LogDebug("Using output directory: %s", w.Output)
+			}
+
+			// Handle ${output} variable substitution
+			for k, v := range params {
+				if str, ok := v.(string); ok {
+					if strings.Contains(str, "${output}") {
+						params[k] = strings.ReplaceAll(str, "${output}", w.Output)
+					}
+				}
+			}
+
+			if err := module.Validate(params); err != nil {
+				return fmt.Errorf("invalid parameters for step %d (%s): %w", i+1, step.Module, err)
+			}
 		}
 	}
 
-	return nil
-}
-
-// ValidateForRetry performs validation for retry operations, skipping input file checks
-func (w *Workflow) ValidateForRetry() error {
-	// Check basic structure
-	if err := w.ValidateStructure(); err != nil {
-		return err
-	}
-
-	// For retry operations, we don't validate input file existence
-	// since we'll be using intermediate files from the previous run
-
-	if w.Output == "" {
-		return fmt.Errorf("output path is required")
-	}
-
-	// Validate each step's module existence
-	for i, step := range w.Steps {
-		if step.Module == "" {
-			return fmt.Errorf("module name is required for step %d", i+1)
-		}
-
-		// Verify the module exists
-		_, err := w.registry.Get(step.Module)
-		if err != nil {
-			return fmt.Errorf("step %d: %w", i+1, err)
-		}
+	if !foundStep {
+		return fmt.Errorf("no step found with name '%s'", workflowName)
 	}
 
 	return nil
@@ -224,10 +404,26 @@ func (w *Workflow) Execute() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
 	defer cancel()
 
+	// Determine the base output directory from the input file
+	var baseOutputDir string
+	if w.Input != "" {
+		// Use the input file's directory
+		baseOutputDir = filepath.Join(filepath.Dir(w.Input), "output")
+	} else if len(w.Steps) > 0 {
+		// Use the first step's input directory
+		if input, ok := w.Steps[0].Parameters["input"].(string); ok {
+			baseOutputDir = filepath.Join(filepath.Dir(input), "output")
+		} else {
+			return fmt.Errorf("could not determine output directory: no input file specified")
+		}
+	} else {
+		return fmt.Errorf("could not determine output directory: no steps defined")
+	}
+
 	// Create a timestamp-based subfolder for this run
 	timestamp := time.Now().Format("20060102-150405")
 	runName := fmt.Sprintf("%s-%s", strings.ReplaceAll(w.Name, " ", "_"), timestamp)
-	outputDir := filepath.Join(w.Output, runName)
+	outputDir := filepath.Join(baseOutputDir, runName)
 
 	// Ensure output directory exists
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -248,9 +444,8 @@ func (w *Workflow) Execute() error {
 		// Get the module
 		module, err := w.registry.Get(step.Module)
 		if err != nil {
-			errorMessage := fmt.Sprintf("Failed to get module for step %s: %v", stepName, err)
-			utils.LogError(errorMessage)
-			return fmt.Errorf("%s", errorMessage)
+			utils.LogError("Failed to get module for step %s: %v", stepName, err)
+			return fmt.Errorf("failed to get module for step %s: %v", stepName, err)
 		}
 
 		// Add input and output paths to parameters if not already specified
@@ -264,51 +459,33 @@ func (w *Workflow) Execute() error {
 					v = strings.ReplaceAll(str, "${output}", outputDir)
 					utils.LogDebug("Resolved path %s to %s", str, v)
 				}
-				// Handle legacy path formats too
-				if str == "./output" {
-					v = outputDir
-				} else if strings.HasPrefix(str, "./output/") {
-					// Replace "./output/filename.ext" with "outputDir/filename.ext"
-					v = filepath.Join(outputDir, strings.TrimPrefix(str, "./output/"))
-					utils.LogDebug("Resolved path %s to %s", str, v)
-				}
 			}
 			params[k] = v
 		}
 
-		// Add input parameter if needed - but only for first step if global input is specified
-		if _, ok := params["input"]; !ok {
-			if i == 0 && w.Input != "" {
-				// First step - use global input if provided
+		// For first step, always use the CLI input if provided
+		if i == 0 {
+			if w.Input != "" {
 				params["input"] = w.Input
-			} else {
-				// For subsequent steps, default to the output directory if input not explicitly specified
-				params["input"] = outputDir
+				utils.LogDebug("Using CLI input file: %s", w.Input)
 			}
 		}
 
-		// Special case handling for modules that need to combine input directory and filename
-		if inputDir, ok := params["input"].(string); ok {
-			// Check if the input is a directory and inputFileName is set
-			inputFileInfo, err := os.Stat(inputDir)
-			if err == nil && inputFileInfo.IsDir() {
-				if inputFileName, ok := params["inputFileName"].(string); ok {
-					// Construct the full file path by joining the directory and filename
-					params["input"] = filepath.Join(inputDir, inputFileName)
-					utils.LogVerbose("Using input file: %s", params["input"])
-				}
+		// Set videoFile parameter for modules that need it
+		if step.Module == "extractshorts" || step.Module == "addtext" {
+			if w.Input != "" {
+				params["videoFile"] = w.Input
+				utils.LogDebug("Using CLI input as videoFile: %s", w.Input)
 			}
 		}
 
-		if _, ok := params["output"]; !ok {
-			params["output"] = outputDir
-		}
+		// Always set the output parameter
+		params["output"] = outputDir
 
 		// Execute the module
 		if err := module.Execute(ctx, params); err != nil {
-			errorMessage := fmt.Sprintf("Failed to execute step %s: %v", stepName, err)
-			utils.LogError(errorMessage)
-			return fmt.Errorf("%s", errorMessage)
+			utils.LogError("Failed to execute step %s: %v", stepName, err)
+			return fmt.Errorf("failed to execute step %s: %v", stepName, err)
 		}
 
 		utils.LogSuccess("Completed %s", stepName)
@@ -330,23 +507,29 @@ func registerModules(registry *modules.ModuleRegistry) {
 	registry.Register(chatgpt.NewSNS())
 	registry.Register(chatgpt.NewShorts())
 	registry.Register(extractshorts.New())
+	registry.Register(addtext.New())
 }
 
 // SetInputPath overrides the input path defined in the workflow
 func (w *Workflow) SetInputPath(path string) {
 	// Verify that the input is a file, not a directory
 	fileInfo, err := os.Stat(path)
-	if err == nil && fileInfo.IsDir() {
-		fmt.Printf("%s\n", utils.Error("Input must be a file, not a directory. Please specify a file path."))
+	if err != nil {
+		utils.LogError("Input file does not exist: %s", path)
+		return
+	}
+	if fileInfo.IsDir() {
+		utils.LogError("Input must be a file, not a directory: %s", path)
 		return
 	}
 	w.Input = path
+	utils.LogInfo("Using input file from CLI: %s", path)
 }
 
 // ExecuteRetry runs the workflow continuing from a previous failed execution
 func (w *Workflow) ExecuteRetry(outputFolderPath, workflowName string) error {
 	// Validate the workflow with retry-specific validation
-	if err := w.ValidateForRetry(); err != nil {
+	if err := w.ValidateForRetry(workflowName); err != nil {
 		return fmt.Errorf("workflow validation failed: %w", err)
 	}
 
@@ -356,9 +539,8 @@ func (w *Workflow) ExecuteRetry(outputFolderPath, workflowName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
 	defer cancel()
 
-	// Use the provided output folder instead of creating a new one
-	outputDir := outputFolderPath
-	utils.LogDebug("Using existing results directory: %s", outputDir)
+	// Use the provided output folder
+	utils.LogDebug("Using existing results directory: %s", w.Output)
 
 	// Find the step that matches the specified workflowName
 	startStep := 0
@@ -373,60 +555,10 @@ func (w *Workflow) ExecuteRetry(outputFolderPath, workflowName string) error {
 	}
 
 	if !stepFound {
-		// If no matching step name was found, fall back to the previous behavior
-		// Determine the last successful step by examining the output folder
-		lastSuccessfulStep := -1
-
-		// Check if each step has produced output files
-		for i, step := range w.Steps {
-			// Based on the step module, check for expected output files
-			// This is a simple check that will work for the workflow in the example
-			switch step.Module {
-			case "extract":
-				// Check if audio file exists
-				audioPath := filepath.Join(outputDir, "audio.wav")
-				if _, err := os.Stat(audioPath); err == nil {
-					lastSuccessfulStep = i
-				}
-			case "transcribe":
-				// Check if transcript file exists
-				transcriptPath := filepath.Join(outputDir, "transcript.srt")
-				if _, err := os.Stat(transcriptPath); err == nil {
-					lastSuccessfulStep = i
-				}
-			case "format":
-				// Check if formatted transcript exists
-				formattedPath := filepath.Join(outputDir, "transcript_clean.txt")
-				if _, err := os.Stat(formattedPath); err == nil {
-					lastSuccessfulStep = i
-				}
-			case "chatgpt":
-				// The prompt template was missing, so chatgpt step likely failed
-				// Check if corrected transcript exists
-				correctedPath := filepath.Join(outputDir, "transcript_corrected.txt")
-				if _, err := os.Stat(correctedPath); err == nil {
-					lastSuccessfulStep = i
-				}
-			case "sns":
-				// Check if social media content exists
-				snsPath := filepath.Join(outputDir, "social_media_content.txt")
-				if _, err := os.Stat(snsPath); err == nil {
-					lastSuccessfulStep = i
-				}
-			}
-		}
-
-		// If we couldn't determine the last successful step, start from the beginning
-		startStep = lastSuccessfulStep + 1
-		utils.LogWarning("No step with name '%s' found, using last successful step detection instead", workflowName)
+		return fmt.Errorf("no step found with name '%s'", workflowName)
 	}
 
-	if startStep >= len(w.Steps) {
-		utils.LogWarning("All steps appear to be complete, starting from the beginning")
-		startStep = 0
-	} else {
-		utils.LogInfo("Resuming from step %d: %s", startStep+1, w.Steps[startStep].Name)
-	}
+	utils.LogInfo("Resuming from step %d: %s", startStep+1, w.Steps[startStep].Name)
 
 	// Execute only the remaining steps
 	for i := startStep; i < len(w.Steps); i++ {
@@ -441,9 +573,8 @@ func (w *Workflow) ExecuteRetry(outputFolderPath, workflowName string) error {
 		// Get the module
 		module, err := w.registry.Get(step.Module)
 		if err != nil {
-			errorMessage := fmt.Sprintf("Failed to get module for step %s: %v", stepName, err)
-			utils.LogError(errorMessage)
-			return fmt.Errorf("%s", errorMessage)
+			utils.LogError("Failed to get module for step %s: %v", stepName, err)
+			return fmt.Errorf("failed to get module for step %s: %v", stepName, err)
 		}
 
 		// Add input and output paths to parameters if not already specified
@@ -454,60 +585,148 @@ func (w *Workflow) ExecuteRetry(outputFolderPath, workflowName string) error {
 				// Handle variable substitution
 				// Replace ${output} with the actual output directory
 				if strings.Contains(str, "${output}") {
-					v = strings.ReplaceAll(str, "${output}", outputDir)
+					v = strings.ReplaceAll(str, "${output}", w.Output)
 					utils.LogDebug("Resolved path %s to %s", str, v)
 				}
 				// Handle legacy path formats too
 				if str == "./output" {
-					v = outputDir
+					v = w.Output
 				} else if strings.HasPrefix(str, "./output/") {
 					// Replace "./output/filename.ext" with "outputDir/filename.ext"
-					v = filepath.Join(outputDir, strings.TrimPrefix(str, "./output/"))
+					v = filepath.Join(w.Output, strings.TrimPrefix(str, "./output/"))
 					utils.LogDebug("Resolved path %s to %s", str, v)
 				}
 			}
 			params[k] = v
 		}
 
-		// Add input parameter if needed - but only for first step if global input is specified
-		if _, ok := params["input"]; !ok {
-			if i == startStep && i == 0 && w.Input != "" {
-				// First step in retry - use global input if provided
+		// Handle input file based on module type and step position
+		if i == startStep {
+			// For first step in retry, use the original input file if available
+			if w.Input != "" {
 				params["input"] = w.Input
-			} else {
-				// For subsequent steps, default to output directory
-				params["input"] = outputDir
+				utils.LogDebug("Using original input file: %s", w.Input)
 			}
-		}
-
-		// Special case handling for modules that need to combine input directory and filename
-		if inputDir, ok := params["input"].(string); ok {
-			// Check if the input is a directory and inputFileName is set
-			inputFileInfo, err := os.Stat(inputDir)
-			if err == nil && inputFileInfo.IsDir() {
-				if inputFileName, ok := params["inputFileName"].(string); ok {
-					// Construct the full file path by joining the directory and filename
-					params["input"] = filepath.Join(inputDir, inputFileName)
-					utils.LogVerbose("Using input file: %s", params["input"])
+		} else {
+			// For subsequent steps, check if we need to use a specific file from output
+			if step.Module == "addtext" || step.Module == "extractshorts" {
+				// Get the input filename from the workflow configuration
+				if input, ok := step.Parameters["input"].(string); ok {
+					// Extract just the filename from the input path
+					inputFilename := filepath.Base(input)
+					// Construct the full path in the output directory
+					params["input"] = filepath.Join(w.Output, inputFilename)
+					utils.LogDebug("Using input file from workflow: %s", params["input"])
 				}
 			}
 		}
 
-		if _, ok := params["output"]; !ok {
-			params["output"] = outputDir
+		// Set videoFile parameter for modules that need it
+		if step.Module == "extractshorts" || step.Module == "addtext" {
+			if w.Input != "" {
+				params["videoFile"] = w.Input
+				utils.LogDebug("Using original input as videoFile: %s", w.Input)
+			}
 		}
+
+		// Always set the output parameter
+		params["output"] = w.Output
 
 		// Execute the module
 		if err := module.Execute(ctx, params); err != nil {
-			errorMessage := fmt.Sprintf("Failed to execute step %s: %v", stepName, err)
-			utils.LogError(errorMessage)
-			return fmt.Errorf("%s", errorMessage)
+			utils.LogError("Failed to execute step %s: %v", stepName, err)
+			return fmt.Errorf("failed to execute step %s: %v", stepName, err)
 		}
 
-		utils.LogSuccess("Completed %s", stepName)
+		utils.LogDebug("Completed %s", stepName)
 	}
 
 	utils.LogSuccess("Workflow completed after retry: %s", w.Name)
-	utils.LogDebug("Results stored in: %s", outputDir)
+	utils.LogDebug("Results stored in: %s", w.Output)
+	return nil
+}
+
+// SetOutputPath overrides the output path defined in the workflow
+func (w *Workflow) SetOutputPath(path string) {
+	// Verify that the output is a directory
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		utils.LogError("Output directory does not exist: %s", path)
+		return
+	}
+	if !fileInfo.IsDir() {
+		utils.LogError("Output must be a directory, not a file: %s", path)
+		return
+	}
+	w.Output = path
+	utils.LogInfo("Using output directory from CLI: %s", path)
+}
+
+// ExecuteSingleModule executes a single module from the workflow
+func (w *Workflow) ExecuteSingleModule(moduleName string) error {
+	// Find the module in the workflow
+	var targetStep *Step
+	for _, step := range w.Steps {
+		if step.Module == moduleName {
+			targetStep = &step
+			break
+		}
+	}
+
+	if targetStep == nil {
+		return fmt.Errorf("module '%s' not found in workflow", moduleName)
+	}
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
+	defer cancel()
+
+	// Get the module
+	module, err := w.registry.Get(targetStep.Module)
+	if err != nil {
+		return fmt.Errorf("failed to get module: %w", err)
+	}
+
+	// Prepare parameters
+	params := make(map[string]interface{})
+	for k, v := range targetStep.Parameters {
+		params[k] = v
+	}
+
+	// Handle input file for video-related modules
+	if targetStep.Module == "extractshorts" || targetStep.Module == "addtext" {
+		if w.Input != "" {
+			params["videoFile"] = w.Input
+			utils.LogDebug("Using CLI input as videoFile: %s", w.Input)
+		}
+	}
+
+	// Set output directory
+	if w.Output != "" {
+		params["output"] = w.Output
+		utils.LogDebug("Using output directory: %s", w.Output)
+	}
+
+	// Handle ${output} variable substitution
+	for k, v := range params {
+		if str, ok := v.(string); ok {
+			if strings.Contains(str, "${output}") {
+				params[k] = strings.ReplaceAll(str, "${output}", w.Output)
+			}
+		}
+	}
+
+	// Validate parameters
+	if err := module.Validate(params); err != nil {
+		return fmt.Errorf("invalid parameters: %w", err)
+	}
+
+	// Execute the module
+	utils.LogInfo("Executing module: %s", moduleName)
+	if err := module.Execute(ctx, params); err != nil {
+		return fmt.Errorf("module execution failed: %w", err)
+	}
+
+	utils.LogSuccess("Module execution completed: %s", moduleName)
 	return nil
 }

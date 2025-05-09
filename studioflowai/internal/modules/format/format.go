@@ -45,26 +45,23 @@ func (m *Module) Validate(params map[string]interface{}) error {
 		return err
 	}
 
-	if p.Input == "" {
-		return fmt.Errorf("input path is required")
+	// Validate input path
+	if err := utils.ValidateInputPath(p.Input, p.Output, p.InputFileName); err != nil {
+		return err
 	}
 
-	if p.Output == "" {
-		return fmt.Errorf("output path is required")
+	// Validate output path
+	if err := utils.ValidateOutputPath(p.Output); err != nil {
+		return err
 	}
 
-	// During validation, we don't check file existence for input files inside an output directory,
-	// as they'll be created during workflow execution.
-	// Also, don't validate against inputFileName as it may not be resolved to an actual path yet.
-	// Just ensure parameters are present.
+	// If we have a specific filename, validation is sufficient
 	if p.InputFileName != "" {
-		// If we have a specific filename, validation is sufficient
-		// Skip file existence check as this could be created during workflow execution
 		return nil
 	}
 
 	// Only validate file existence for external input paths
-	_, err := os.Stat(p.Input)
+	fileInfo, err := os.Stat(p.Input)
 	if err != nil {
 		// For files that don't exist, check if they might be in the output directory
 		// as they could be created by previous steps
@@ -78,8 +75,7 @@ func (m *Module) Validate(params map[string]interface{}) error {
 	}
 
 	// Check if it's a directory but no inputFileName is provided
-	fileInfo, err := os.Stat(p.Input)
-	if err == nil && fileInfo.IsDir() && p.InputFileName == "" {
+	if fileInfo.IsDir() && p.InputFileName == "" {
 		return fmt.Errorf("input is a directory but no inputFileName specified")
 	}
 
@@ -103,22 +99,25 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
+	// Resolve the input path if it contains ${output}
+	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
+
 	// Verify input exists at execution time (now that previous steps have completed)
-	fileInfo, err := os.Stat(p.Input)
+	fileInfo, err := os.Stat(resolvedInput)
 	if err != nil {
 		return fmt.Errorf("input file not found: %w", err)
 	}
 
 	if fileInfo.IsDir() {
-		return fmt.Errorf("input must be a file, not a directory: %s", p.Input)
+		return fmt.Errorf("input must be a file, not a directory: %s", resolvedInput)
 	}
 
 	// Process the single file
-	filename := filepath.Base(p.Input)
+	filename := filepath.Base(resolvedInput)
 
 	// Check if the file is a text file, not binary
-	if !utils.IsTextFile(p.Input) {
-		return fmt.Errorf("file %s appears to be binary, not a text file - skipping", p.Input)
+	if !utils.IsTextFile(resolvedInput) {
+		return fmt.Errorf("file %s appears to be binary, not a text file - skipping", resolvedInput)
 	}
 
 	// Determine output filename
@@ -131,18 +130,18 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 
 	outputPath := filepath.Join(p.Output, outputBaseName+p.CleanFileSuffix+".txt")
 
-	if err := m.formatFile(p.Input, outputPath, p); err != nil {
+	if err := m.formatFile(resolvedInput, outputPath, p); err != nil {
 		return err
 	}
 
 	// Create the additional formats for SRT files
-	if filepath.Ext(p.Input) == ".srt" {
-		if err := m.createCleanFormats(p.Input, p.Output, p); err != nil {
+	if filepath.Ext(resolvedInput) == ".srt" {
+		if err := m.createCleanFormats(resolvedInput, p.Output, p); err != nil {
 			return err
 		}
 	}
 
-	utils.LogSuccess("Formatted %s -> %s", p.Input, outputPath)
+	utils.LogSuccess("Formatted %s -> %s", resolvedInput, outputPath)
 
 	return nil
 }
@@ -344,7 +343,7 @@ func (m *Module) createCleanFormats(inputPath, outputDir string, p Params) error
 		return fmt.Errorf("failed to extract text from SRT: %w", err)
 	}
 
-	utils.LogSuccess("Created text-only format: %s", textOutputPath)
+	utils.LogDebug("Created text-only format: %s", textOutputPath)
 	return nil
 }
 
@@ -361,116 +360,6 @@ func isTimestamp(line string) bool {
 	timestampPattern := `^\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}$`
 	matched, _ := regexp.MatchString(timestampPattern, strings.TrimSpace(line))
 	return matched
-}
-
-// combineFiles combines multiple transcript files
-func (m *Module) combineFiles(files []string, outputDir string, p Params) error {
-	// Filter to get only clean text files
-	cleanFiles := filterCleanFiles(files)
-
-	utils.LogDebug("Found %d formatted files to combine", len(cleanFiles))
-
-	if len(cleanFiles) == 0 {
-		utils.LogWarning("No formatted text files found to combine")
-		return nil
-	}
-
-	// Sort files to ensure they're in the right order
-	if err := sortFilesByNumber(cleanFiles); err != nil {
-		utils.LogWarning(fmt.Sprintf("Failed to sort files by number: %v, using alphabetical order", err))
-	}
-
-	// Determine output filename
-	var outputBaseName string
-	if p.OutputFileName != "" {
-		outputBaseName = p.OutputFileName
-	} else {
-		outputBaseName = "transcript"
-	}
-
-	// Create combined file
-	combinedPath := filepath.Join(outputDir, outputBaseName+"_text"+p.CleanFileSuffix+".txt")
-	if err := m.concatenateTextFiles(cleanFiles, combinedPath); err != nil {
-		return fmt.Errorf("failed to concatenate files: %w", err)
-	}
-
-	utils.LogSuccess("Successfully combined files into: %s", combinedPath)
-	return nil
-}
-
-// Helper to filter only formatted text files
-func filterCleanFiles(files []string) []string {
-	var cleanFiles []string
-	for _, file := range files {
-		// Skip any binary files
-		if !utils.IsTextFile(file) {
-			utils.LogWarning(fmt.Sprintf("Skipping binary file in format filter: %s", file))
-			continue
-		}
-
-		// Only include files with "_clean" in the name
-		if strings.Contains(filepath.Base(file), "_clean") {
-			cleanFiles = append(cleanFiles, file)
-			utils.LogDebug(fmt.Sprintf("Selected formatted file: %s", file))
-		}
-	}
-	return cleanFiles
-}
-
-// concatenateTextFiles concatenates multiple text files into one
-func (m *Module) concatenateTextFiles(files []string, outputPath string) error {
-	// Create output file
-	outFile, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer outFile.Close()
-
-	writer := bufio.NewWriter(outFile)
-	defer writer.Flush()
-
-	// Process each file
-	for i, file := range files {
-		// Skip any non-text files
-		if !utils.IsTextFile(file) {
-			utils.LogWarning(fmt.Sprintf("Skipping binary file: %s", file))
-			continue
-		}
-
-		// Add file header if not the first file
-		if i > 0 {
-			headerText := fmt.Sprintf("\n\n// -------------------- %s --------------------\n\n", filepath.Base(file))
-			if _, err := writer.WriteString(headerText); err != nil {
-				return fmt.Errorf("failed to write file header: %w", err)
-			}
-		}
-
-		// Open input file
-		inFile, err := os.Open(file)
-		if err != nil {
-			return fmt.Errorf("failed to open input file %s: %w", file, err)
-		}
-
-		// Copy content
-		scanner := bufio.NewScanner(inFile)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if _, err := writer.WriteString(line + "\n"); err != nil {
-				inFile.Close()
-				return fmt.Errorf("failed to write to output file: %w", err)
-			}
-		}
-
-		if err := scanner.Err(); err != nil {
-			inFile.Close()
-			return fmt.Errorf("error reading input file %s: %w", file, err)
-		}
-
-		inFile.Close()
-		utils.LogDebug(fmt.Sprintf("Added content from %s", file))
-	}
-
-	return nil
 }
 
 // extractTextFromSRT extracts only the text content from an SRT file
@@ -553,57 +442,4 @@ func (m *Module) extractTextFromSRT(inputPath, outputPath string) error {
 	}
 
 	return nil
-}
-
-// sortFilesByNumber sorts files by their numeric part if present
-func sortFilesByNumber(files []string) error {
-	// Sort files by numeric part if present
-	// For example, "file001.txt" and "file002.txt" should be sorted correctly
-	numberedFiles := make(map[int]string)
-
-	for _, file := range files {
-		baseName := filepath.Base(file)
-		// Extract any numeric part from the filename
-		re := regexp.MustCompile(`(\d+)`)
-		matches := re.FindStringSubmatch(baseName)
-
-		if len(matches) > 0 {
-			num, err := strconv.Atoi(matches[1])
-			if err != nil {
-				return err
-			}
-			numberedFiles[num] = file
-		}
-	}
-
-	// If we have numeric parts, sort by them
-	if len(numberedFiles) > 0 && len(numberedFiles) == len(files) {
-		// Clear the array
-		files = files[:0]
-
-		// Get sorted keys
-		var keys []int
-		for k := range numberedFiles {
-			keys = append(keys, k)
-		}
-
-		// Sort keys
-		for i := 0; i < len(keys)-1; i++ {
-			for j := i + 1; j < len(keys); j++ {
-				if keys[i] > keys[j] {
-					keys[i], keys[j] = keys[j], keys[i]
-				}
-			}
-		}
-
-		// Add back sorted files
-		for _, k := range keys {
-			files = append(files, numberedFiles[k])
-		}
-
-		return nil
-	}
-
-	// Otherwise just use string sorting
-	return fmt.Errorf("not all files have numeric parts")
 }
