@@ -48,53 +48,25 @@ func (m *SNSModule) Validate(params map[string]interface{}) error {
 		return err
 	}
 
-	if p.Input == "" {
-		return fmt.Errorf("input path is required")
+	// Validate input path
+	if err := utils.ValidateInputPath(p.Input, p.Output, p.InputFileName); err != nil {
+		return err
 	}
 
-	if p.Output == "" {
-		return fmt.Errorf("output path is required")
-	}
-
-	// During validation, we don't check file existence for input files inside an output directory,
-	// as they'll be created during workflow execution.
-	// Also, don't validate against inputFileName as it may not be resolved to an actual path yet.
-	// Just ensure parameters are present.
-	if p.InputFileName != "" {
-		// If we have a specific filename, validation is sufficient
-		// Skip file existence check as this could be created during workflow execution
-		return nil
-	}
-
-	// Only validate file existence for external input paths
-	_, err := os.Stat(p.Input)
-	if err != nil {
-		// For files that don't exist, check if they might be in the output directory
-		// as they could be created by previous steps
-		if strings.Contains(p.Input, p.Output) ||
-			strings.Contains(p.Input, "output") ||
-			filepath.Base(p.Input) == "transcript_corrected.txt" {
-			// Skip validation for expected output files
-			return nil
-		}
-		return fmt.Errorf("input file does not exist: %w", err)
-	}
-
-	// Check if it's a directory but no inputFileName is provided
-	fileInfo, err := os.Stat(p.Input)
-	if err == nil && fileInfo.IsDir() && p.InputFileName == "" {
-		return fmt.Errorf("input is a directory but no inputFileName specified")
+	// Validate output path
+	if err := utils.ValidateOutputPath(p.Output); err != nil {
+		return err
 	}
 
 	// Check if the API key is set - just warn but don't error
 	if os.Getenv("OPENAI_API_KEY") == "" {
-		utils.LogWarning("OPENAI_API_KEY environment variable is not set.")
+		utils.LogWarning("OPENAI_API_KEY environment variable is not set. A placeholder file will be generated.")
 	}
 
 	// If a custom prompt file path is provided, check if it exists
 	if p.PromptFilePath != "" {
-		if _, err := os.Stat(p.PromptFilePath); err != nil {
-			utils.LogWarning("Custom prompt file not found at %s, will use default if needed", p.PromptFilePath)
+		if _, err := os.Stat(p.PromptFilePath); os.IsNotExist(err) {
+			return fmt.Errorf("prompt template file %s does not exist", p.PromptFilePath)
 		}
 	}
 
@@ -136,19 +108,22 @@ func (m *SNSModule) Execute(ctx context.Context, params map[string]interface{}) 
 	// Get the SNS prompt
 	snsPrompt := getSNSPrompt(p.PromptFilePath)
 
+	// Resolve the input path if it contains ${output}
+	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
+
 	// Verify input exists at execution time (now that previous steps have completed)
-	fileInfo, err := os.Stat(p.Input)
+	fileInfo, err := os.Stat(resolvedInput)
 	if err != nil {
 		return fmt.Errorf("input file not found: %w", err)
 	}
 
 	if fileInfo.IsDir() {
-		return fmt.Errorf("input must be a file, not a directory: %s", p.Input)
+		return fmt.Errorf("input must be a file, not a directory: %s", resolvedInput)
 	}
 
 	// Check if input is a text file
-	if !utils.IsTextFile(p.Input) {
-		return fmt.Errorf("file %s appears to be binary, not a text file", p.Input)
+	if !utils.IsTextFile(resolvedInput) {
+		return fmt.Errorf("file %s appears to be binary, not a text file", resolvedInput)
 	}
 
 	// Determine output file name
@@ -156,16 +131,16 @@ func (m *SNSModule) Execute(ctx context.Context, params map[string]interface{}) 
 	if p.OutputFileName != "" {
 		outputPath = filepath.Join(p.Output, p.OutputFileName+".md")
 	} else {
-		baseFilename := filepath.Base(p.Input)
+		baseFilename := filepath.Base(resolvedInput)
 		baseFilename = baseFilename[:len(baseFilename)-len(filepath.Ext(baseFilename))]
 		outputPath = filepath.Join(p.Output, baseFilename+"_SNS.md")
 	}
 
-	if err := m.processSNSFile(ctx, p.Input, outputPath, snsPrompt, p); err != nil {
+	if err := m.processSNSFile(ctx, resolvedInput, outputPath, snsPrompt, p); err != nil {
 		return err
 	}
 
-	fmt.Println(utils.Success(fmt.Sprintf("Generated SNS content for %s -> %s", p.Input, outputPath)))
+	fmt.Println(utils.Success(fmt.Sprintf("Generated SNS content for %s -> %s", resolvedInput, outputPath)))
 	return nil
 }
 

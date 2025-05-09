@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/gnzdotmx/studioflowai/studioflowai/cmd"
 
@@ -10,11 +11,20 @@ import (
 )
 
 func init() {
-	// Load .env file if it exists
+	// First try to load from global config in user's home directory
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		globalConfigPath := filepath.Join(homeDir, ".studioflowai", ".env")
+		if err := godotenv.Load(globalConfigPath); err == nil {
+			fmt.Println("Loaded environment variables from global config file")
+		}
+	}
+
+	// Then try to load from local .env file if it exists
 	if err := godotenv.Load(); err != nil {
-		fmt.Println("No .env file found - using environment variables")
+		fmt.Println("No local .env file found - using environment variables")
 	} else {
-		fmt.Println("Loaded environment variables from .env file")
+		fmt.Println("Loaded environment variables from local .env file")
 	}
 
 	// Debug: Check if the API key is set

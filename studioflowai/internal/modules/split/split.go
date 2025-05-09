@@ -40,17 +40,30 @@ func (m *Module) Validate(params map[string]interface{}) error {
 		return err
 	}
 
-	if p.Input == "" {
-		return fmt.Errorf("input path is required")
+	// Validate input path
+	if err := utils.ValidateInputPath(p.Input, p.Output, ""); err != nil {
+		return err
 	}
 
-	if p.Output == "" {
-		return fmt.Errorf("output path is required")
+	// Validate output path
+	if err := utils.ValidateOutputPath(p.Output); err != nil {
+		return err
 	}
 
-	// Ensure the input file or directory exists
-	if _, err := os.Stat(p.Input); os.IsNotExist(err) {
-		return fmt.Errorf("input path %s does not exist", p.Input)
+	// Validate FFmpeg dependency
+	if err := utils.ValidateRequiredDependency("ffmpeg"); err != nil {
+		return err
+	}
+
+	// Resolve the input path if it contains ${output}
+	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
+
+	// Validate audio file extension if input is a file
+	fileInfo, err := os.Stat(resolvedInput)
+	if err == nil && !fileInfo.IsDir() {
+		if err := utils.ValidateFileExtension(resolvedInput, []string{".wav", ".mp3", ".m4a", ".aac"}); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -79,8 +92,11 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
+	// Resolve the input path if it contains ${output}
+	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
+
 	// Check if input is a directory or a file
-	fileInfo, err := os.Stat(p.Input)
+	fileInfo, err := os.Stat(resolvedInput)
 	if err != nil {
 		return fmt.Errorf("failed to access input: %w", err)
 	}
@@ -91,12 +107,15 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 	}
 
 	// Process a single file
-	return m.processFile(ctx, p.Input, p)
+	return m.processFile(ctx, resolvedInput, p)
 }
 
 // processDirectory processes all audio files in a directory
 func (m *Module) processDirectory(ctx context.Context, p Params) error {
-	entries, err := os.ReadDir(p.Input)
+	// Resolve the input path if it contains ${output}
+	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
+
+	entries, err := os.ReadDir(resolvedInput)
 	if err != nil {
 		return fmt.Errorf("failed to read directory: %w", err)
 	}
@@ -112,7 +131,7 @@ func (m *Module) processDirectory(ctx context.Context, p Params) error {
 			continue
 		}
 
-		inputPath := filepath.Join(p.Input, filename)
+		inputPath := filepath.Join(resolvedInput, filename)
 		if err := m.processFile(ctx, inputPath, p); err != nil {
 			return err
 		}

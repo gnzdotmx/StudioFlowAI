@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
+	"github.com/gnzdotmx/studioflowai/studioflowai/internal/config"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/utils"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/validator"
 	"github.com/gnzdotmx/studioflowai/studioflowai/pkg/workflow"
@@ -24,60 +24,41 @@ var runCmd = &cobra.Command{
 	Short: "Run a video processing workflow",
 	Long:  `Execute a video processing workflow defined in a YAML file.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Create input configuration
+		inputConfig, err := config.NewInputConfig(
+			inputFileOverride,
+			outputFolderPath,
+			workflowFilePath,
+			retryFlag,
+			workflowName,
+		)
+		if err != nil {
+			return fmt.Errorf("invalid input configuration: %w", err)
+		}
+
 		// Validate that external dependencies are installed
 		if err := validator.ValidateExternalTools(); err != nil {
 			return fmt.Errorf("dependency validation failed: %w", err)
 		}
 
 		// Load the workflow without full validation
-		wf, err := workflow.LoadFromFile(workflowFilePath)
+		wf, err := workflow.LoadFromFile(inputConfig.WorkflowPath)
 		if err != nil {
 			return fmt.Errorf("failed to load workflow: %w", err)
 		}
 
-		// Override input file if specified
-		if inputFileOverride != "" {
-			// Verify that input is a file, not a directory
-			fileInfo, err := os.Stat(inputFileOverride)
-			if err != nil {
-				return fmt.Errorf("input file does not exist: %s", inputFileOverride)
-			}
-			if fileInfo.IsDir() {
-				return fmt.Errorf("input must be a file, not a directory: %s", inputFileOverride)
-			}
-
-			// Either set the global input (legacy approach) or update the first step's input parameter
-			if len(wf.Steps) > 0 {
-				// Find the first step
-				firstStep := &wf.Steps[0]
-
-				// If we don't have parameters map yet, create it
-				if firstStep.Parameters == nil {
-					firstStep.Parameters = make(map[string]interface{})
-				}
-
-				// Set the input parameter for the first step
-				firstStep.Parameters["input"] = inputFileOverride
-				utils.LogInfo("Using input file from CLI for first step: %s", inputFileOverride)
-			} else {
-				// Fallback for legacy approach
-				wf.SetInputPath(inputFileOverride)
-				utils.LogInfo("Using input file from CLI: %s", inputFileOverride)
-			}
+		// Set input and output paths
+		if inputConfig.InputPath != "" {
+			wf.SetInputPath(inputConfig.InputPath)
+		}
+		if inputConfig.OutputPath != "" {
+			wf.SetOutputPath(inputConfig.OutputPath)
 		}
 
-		// Execute the workflow - validation will happen inside Execute
-		if retryFlag {
-			if outputFolderPath == "" {
-				return fmt.Errorf("output folder path is required when using retry flag")
-			}
-			if workflowName == "" {
-				return fmt.Errorf("workflow name is required when using retry flag")
-			}
-
-			// Get the failing step by inspecting the output folder
-			utils.LogInfo("Retrying workflow %s in output folder %s", workflowName, outputFolderPath)
-			if err := wf.ExecuteRetry(outputFolderPath, workflowName); err != nil {
+		// Execute the workflow
+		if inputConfig.RetryMode {
+			utils.LogInfo("Retrying workflow %s in output folder %s", inputConfig.WorkflowName, inputConfig.OutputPath)
+			if err := wf.ExecuteRetry(inputConfig.OutputPath, inputConfig.WorkflowName); err != nil {
 				return fmt.Errorf("workflow retry execution failed: %w", err)
 			}
 		} else {

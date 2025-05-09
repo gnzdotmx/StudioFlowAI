@@ -4,26 +4,24 @@ description: "This prompt helps identify the most engaging parts of a video for 
 
 prompt: |
   ## CRITICAL REQUIREMENTS:
-  1. COMPLETE COVERAGE: Analyze the ENTIRE transcript to the END. Stopping early is NOT acceptable.
-  2. SPANISH OUTPUT: Generate ALL content (titles, descriptions, tags) in SPANISH for Spanish-speaking audiences.
-  3. DISTRIBUTION: Include AT LEAST 1 clip per 5 minutes of video. Distribute evenly across beginning, middle, and end.
-  4. YAML FORMAT: Use EXACTLY the format shown in the example - respect indentation with spaces.
-
-  ## PROCESS:
-  1. Scan the entire transcript and note the final timestamp
-  2. Identify high-impact, memorable moments that work as standalone clips (%d-%d seconds)
-  3. Distribute your selections throughout the video (⅓ in each section)
-  4. MANDATORY: Include at least 1 clip from the final 25% of the video
+  1. COMPLETE COVERAGE: Analyze the ENTIRE transcript to the END. NEVER STOP early.
+  2. SPANISH OUTPUT: Generate ALL content (titles, descriptions, tags, question) in SPANISH for Spanish-speaking audiences.
+  3. TOPIC IDENTIFICATION: Identify all main topics/themes discussed in the video.
+  4. MINIMUM CLIPS PER TOPIC: Create AT LEAST 3 shorts for EACH identified topic.
+  5. DISTRIBUTION: Ensure clips are distributed evenly across beginning, middle, and end.
+  6. DURATION: Each clip should be between %s and %s seconds.
+  7. YAML FORMAT: Use EXACTLY the format shown in the example - respect indentation with spaces.
 
   ## REQUIRED YAML FORMAT (USE EXACTLY THIS FORMAT):
   ```yaml
   sourceVideo: ${source_video}
   shorts:
     - title: "Título atractivo"
-      startTime: "00:15:30"
-      endTime: "00:16:05"
+      startTime: "hh:mm:ss"
+      endTime: "hh:mm:ss"
       description: "Descripción detallada que explica por qué este momento es interesante"
-      tags: "#Hashtag1, #Hashtag2, #Hashtag3"
+      tags: "#Hashtag1 #Hashtag2 #Hashtag3"
+      question: "¿Pregunta o descripción corta que se responde en el video?"
   ```
 
   ## YAML SAFETY GUIDELINES (VERY IMPORTANT):
@@ -32,6 +30,8 @@ prompt: |
   - Avoid line breaks within values
   - DO NOT INCLUDE COMMENTS like "# Maximum 40 characters" in your final response
   - VERIFY that your YAML is valid before submitting
+  - question: must be no more than 40 characters, try to be creative and interesting
+  - title:  must be maximum 100 characters including high impact hashtags between the name using #hashtags format
 
   ## SELECTION CRITERIA (at least TWO):
   - Hook factor: Captures attention in first 3 seconds
@@ -42,14 +42,16 @@ prompt: |
   - Quotable: Contains memorable phrase for text overlay
   - Complete story: Mini-narrative with beginning, development, conclusion
   - Unique perspective: Surprising or uncommon point of view
+  - FOCUS ON WHAT THE INTERVIEWEE IS SAYING, NOT THE HOST
+  - DO NOT INCLUDE QUESTIONS MADE BY THE HOST
+  - DO NOT INCLUDE HOST'S COMMENTS OR THOUGHTS
 
   ## MANDATORY FINAL VERIFICATION:
   1. Did you analyze the COMPLETE transcript to the end?
-  2. Do you have clips from the beginning, MIDDLE AND END?
-  3. Are at least ⅓ of clips from the last third?
-  4. Is there at least one clip from the last 25% of the video?
-  5. Is the YAML format EXACTLY as shown in the example?
-  6. Does the indentation use TWO SPACES (not tabs)?
+  2. Did you identify all main topics from the conversation?
+  3. Do you have AT LEAST 3 shorts for EACH identified topic?
+  4. Is the YAML format EXACTLY as shown in the example?
+  5. Does the indentation use TWO SPACES (not tabs)?
   
   ## IMPORTANT: Your response MUST begin with the required YAML format, without prior explanations.
   

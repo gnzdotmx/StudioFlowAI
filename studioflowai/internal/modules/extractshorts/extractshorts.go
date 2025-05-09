@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules"
@@ -23,7 +22,6 @@ type Params struct {
 	Input         string `json:"input"`         // Path to shorts_suggestions.yaml file
 	Output        string `json:"output"`        // Path to output directory
 	VideoFile     string `json:"videoFile"`     // Path to the source video file
-	OutputFormat  string `json:"outputFormat"`  // Output format (default: "mp4")
 	FFmpegParams  string `json:"ffmpegParams"`  // Additional parameters for FFmpeg
 	InputFileName string `json:"inputFileName"` // Specific input file name to process
 	QuietFlag     bool   `json:"quietFlag"`     // Suppress ffmpeg output (default: true)
@@ -61,41 +59,34 @@ func (m *Module) Validate(params map[string]interface{}) error {
 		return err
 	}
 
-	if p.Input == "" {
-		return fmt.Errorf("input path is required")
+	// Validate input path
+	if err := utils.ValidateInputPath(p.Input, p.Output, p.InputFileName); err != nil {
+		return err
 	}
 
-	if p.Output == "" {
-		return fmt.Errorf("output path is required")
+	// Validate output path
+	if err := utils.ValidateOutputPath(p.Output); err != nil {
+		return err
 	}
 
-	if p.VideoFile == "" {
-		return fmt.Errorf("videoFile is required - specify the source video file")
+	// Validate video file
+	if err := utils.ValidateVideoFile(p.VideoFile); err != nil {
+		return err
 	}
 
-	// Check if FFmpeg is installed
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return fmt.Errorf("ffmpeg not found in PATH: %w", err)
+	// Validate FFmpeg dependency
+	if err := utils.ValidateRequiredDependency("ffmpeg"); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-// Execute extracts short video clips based on the shorts_suggestions.yaml file
+// Execute extracts short video clips based on suggestions
 func (m *Module) Execute(ctx context.Context, params map[string]interface{}) error {
 	var p Params
 	if err := modules.ParseParams(params, &p); err != nil {
 		return err
-	}
-
-	// Set default values
-	if p.OutputFormat == "" {
-		p.OutputFormat = "mp4"
-	}
-
-	// Default to quiet mode (no ffmpeg output) unless explicitly set to false
-	if _, exists := params["quietFlag"]; !exists {
-		p.QuietFlag = true
 	}
 
 	// Create output directory if it doesn't exist
@@ -103,57 +94,62 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	// Handle input path resolution
-	inputPath, err := getInputFilePath(p.Input, p.InputFileName)
+	// Resolve the input path if it contains ${output}
+	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
+
+	// If input is a directory and we have a specific input filename, join them
+	if fileInfo, err := os.Stat(resolvedInput); err == nil && fileInfo.IsDir() && p.InputFileName != "" {
+		resolvedInput = filepath.Join(resolvedInput, p.InputFileName)
+	}
+
+	// Read and parse the shorts suggestions YAML file
+	shortsData, err := m.readShortsFile(resolvedInput)
 	if err != nil {
 		return err
 	}
 
-	// Read and parse the shorts_suggestions.yaml file
-	shortsData, err := readShortsFile(inputPath)
-	if err != nil {
-		return fmt.Errorf("failed to read shorts suggestions file: %w", err)
-	}
-
-	// Extract each short clip
-	for i, short := range shortsData.Shorts {
-		if err := m.extractShortClip(ctx, short, p, i+1); err != nil {
-			return fmt.Errorf("failed to extract short clip %d: %w", i+1, err)
+	// Process each short clip
+	for _, short := range shortsData.Shorts {
+		if err := m.extractShortClip(ctx, short, p); err != nil {
+			return err
 		}
 	}
 
-	utils.LogSuccess("Successfully extracted %d short clips", len(shortsData.Shorts))
 	return nil
 }
 
-// readShortsFile reads and parses the shorts_suggestions.yaml file
-func readShortsFile(filePath string) (*ShortsData, error) {
-	data, err := os.ReadFile(filePath)
+// readShortsFile reads and parses the shorts suggestions YAML file
+func (m *Module) readShortsFile(inputPath string) (*ShortsData, error) {
+	// Ensure we're reading a file, not a directory
+	fileInfo, err := os.Stat(inputPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		return nil, fmt.Errorf("failed to read shorts file: %w", err)
+	}
+	if fileInfo.IsDir() {
+		return nil, fmt.Errorf("input path is a directory, expected a file: %s", inputPath)
+	}
+
+	data, err := os.ReadFile(inputPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read shorts file: %w", err)
 	}
 
 	var shortsData ShortsData
 	if err := yaml.Unmarshal(data, &shortsData); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+		return nil, fmt.Errorf("failed to parse shorts file: %w", err)
 	}
 
 	return &shortsData, nil
 }
 
-// extractShortClip extracts a single short clip using FFmpeg
-func (m *Module) extractShortClip(ctx context.Context, short ShortClip, p Params, index int) error {
-	// Sanitize the title for use in filename
-	safeTitle := sanitizeFilename(short.Title)
-	if safeTitle == "" {
-		safeTitle = fmt.Sprintf("clip%d", index)
-	}
-
-	// Convert startTime to HHMMSS format for filename
+// extractShortClip extracts a single short video clip
+func (m *Module) extractShortClip(ctx context.Context, short ShortClip, p Params) error {
+	// Convert startTime and endTime to HHMMSS format for filename
 	startTimeHHMMSS := convertToHHMMSS(short.StartTime)
+	endTimeHHMMSS := convertToHHMMSS(short.EndTime)
 
-	// Create output filename: HHMMSS-Title.mp4
-	outputFilename := fmt.Sprintf("%s-%s.%s", startTimeHHMMSS, safeTitle, p.OutputFormat)
+	// Create output filename: HHMMSS-HHMMSS.mp4
+	outputFilename := fmt.Sprintf("%s-%s.mp4", startTimeHHMMSS, endTimeHHMMSS)
 	outputPath := filepath.Join(p.Output, outputFilename)
 
 	// Build FFmpeg command
@@ -172,6 +168,9 @@ func (m *Module) extractShortClip(ctx context.Context, short ShortClip, p Params
 	// Add any additional FFmpeg parameters
 	if p.FFmpegParams != "" {
 		args = append(args, strings.Fields(p.FFmpegParams)...)
+	} else {
+		// Default video codec settings if no custom parameters provided
+		args = append(args, "-c:v", "libx264", "-c:a", "aac", "-b:a", "128k", "-b:v", "2500k")
 	}
 
 	// Add output file
@@ -205,49 +204,21 @@ func (m *Module) extractShortClip(ctx context.Context, short ShortClip, p Params
 	return nil
 }
 
-// getInputFilePath resolves the input file path
-func getInputFilePath(inputPath, inputFileName string) (string, error) {
-	// Check if input is a file or directory
-	fileInfo, err := os.Stat(inputPath)
-	if err != nil {
-		return "", fmt.Errorf("input path does not exist: %w", err)
-	}
-
-	// If input is a file, return it directly
-	if !fileInfo.IsDir() {
-		return inputPath, nil
-	}
-
-	// If input is a directory and a specific filename is provided
-	if inputFileName != "" {
-		return filepath.Join(inputPath, inputFileName), nil
-	}
-
-	// If input is a directory, look for shorts_suggestions.yaml
-	defaultFile := filepath.Join(inputPath, "shorts_suggestions.yaml")
-	if _, err := os.Stat(defaultFile); err == nil {
-		return defaultFile, nil
-	}
-
-	return "", fmt.Errorf("no shorts_suggestions.yaml file found in %s", inputPath)
-}
-
-// sanitizeFilename removes or replaces characters that are not safe for filenames
-func sanitizeFilename(filename string) string {
-	// Replace spaces and special characters with hyphens
-	re := regexp.MustCompile(`[^\w\s-]`)
-	safe := re.ReplaceAllString(filename, "-")
-
-	// Replace multiple spaces with a single hyphen
-	re = regexp.MustCompile(`[\s]+`)
-	safe = re.ReplaceAllString(safe, "-")
-
-	// Trim hyphens from beginning and end
-	return strings.Trim(safe, "-")
-}
-
-// convertToHHMMSS converts a timestamp like "00:01:23" to "000123"
+// convertToHHMMSS converts a timestamp to HHMMSS format
 func convertToHHMMSS(timestamp string) string {
-	// Remove colons
-	return strings.ReplaceAll(timestamp, ":", "")
+	// Remove any non-numeric characters
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, timestamp)
+
+	// Ensure we have at least 6 digits
+	if len(digits) < 6 {
+		digits = fmt.Sprintf("%06s", digits)
+	}
+
+	// Take the first 6 digits
+	return digits[:6]
 }

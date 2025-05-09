@@ -1,16 +1,33 @@
-name: Transcribe Audio Only
+name: Transcribe Audio to Text
 description: Transcribe an audio file to text/subtitles
-input: ./input/audio.wav  # Can be overridden with the --input CLI flag
 output: ./output
+# Results will be stored in a subfolder named like "Transcribe_Audio_to_Text-20231015-120530"
 
 steps:
   - name: Transcribe Audio
     module: transcribe
     parameters:
-      # Input is inherited from workflow, but can be overridden here
-      # input: "./custom_audio.wav"  # Uncomment to override workflow input
-      outputFileName: "my_transcript"  # Custom output file name (without extension)
-      model: "whisper"
-      outputFormat: "srt"              # Options: srt, txt, vtt, etc.
-      # language: "English"            # Uncomment to force a specific language
-      whisperParams: "--model large-v2 --beam_size 5 --temperature 0.0 --best_of 5 --word_timestamps True --threads 16" 
+      # Input: Audio file to transcribe
+      # Can be specified in three ways:
+      # 1. Via CLI using -i flag: studioflowai run -w transcribe_only.yaml -i ./input/audio.wav
+      # 2. In the workflow file (as shown below)
+      # 3. From a previous step's output in the workflow
+      input: "./input/audio.wav"                    # Audio file to transcribe (REQUIRED - replace with your audio path)
+      # Output: Transcript file in output directory
+      outputFileName: "transcript"                  # Will create transcript.srt in output directory
+      model: "whisper"                             # Transcription model to use
+      # Language is optional - if not specified, Whisper will auto-detect
+      # language: "Spanish"                        # Uncomment to force a specific language
+      outputFormat: "srt"                          # Output format (srt, txt, vtt)
+      whisperParams: "--model large-v3 --beam_size 5 --temperature 0.0 --best_of 5 --word_timestamps True --threads 16 --patience 1.0 --condition_on_previous_text True"
+
+# Example usage:
+# 1. Using CLI input:
+#    studioflowai run -w transcribe_only.yaml -i ./input/audio.wav
+#
+# 2. Using workflow input parameter:
+#    studioflowai run -w transcribe_only.yaml
+#
+# 3. As part of a larger workflow:
+#    - First run the extract module to get audio
+#    - Then run this workflow to transcribe it 

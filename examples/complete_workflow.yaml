@@ -1,55 +1,75 @@
 name: Complete Video Processing Workflow
 description: Extract audio, split into segments, transcribe, format and correct transcription
-output: ./output
-# Results will be stored in a subfolder named like "Complete_Video_Processing_Workflow-20231015-120530"
+
+# Input Configuration
+# The input video file can be specified in three ways:
+# 1. Via CLI using the -i flag: studioflowai run -w complete_workflow.yaml -i ./input/video.mp4
+# 2. In the workflow file (first step's input parameter)
+# 3. From a previous step's output in the workflow
+
+# Output Configuration
+# The output directory will be automatically created with timestamp:
+# ./output/Complete_Video_Processing_Workflow-YYYYMMDD-HHMMSS/
+# Each module's output will be stored in this directory
 
 steps:
   - name: Extract Audio
     module: extract
     parameters:
-      input: ./tests/video-test.mov # Input can be overridden with --input CLI flag
-      outputName: "audio.wav"   # Set consistent output file name
-      audioFormat: wav
+      # Input: Original video file
+      input: ./input/video.mp4  # Can be overridden with -i flag
+      # Output: Audio file in output directory
+      outputName: "audio.wav"   # Will be stored in output directory
       sampleRate: 16000
       channels: 1
       
   - name: Transcribe Audio
     module: transcribe
     parameters:
-      input: "${output}/audio.wav"  # This will be resolved to the actual output subfolder path
-      outputFileName: "transcript"  # Set consistent output file name
+      # Input: Audio file from previous step
+      input: "${output}/audio.wav"  # References output directory
+      # Output: Transcript file in output directory
+      outputFileName: "transcript"  # Will create transcript.srt in output directory
       model: "whisper"
       # Language is optional - if not specified, Whisper will auto-detect
       # language: "Spanish"  # Uncomment to force a specific language
-      outputFormat: "srt"
-      whisperParams: "--model large-v2 --beam_size 5 --temperature 0.0 --best_of 5 --word_timestamps True --threads 16 --patience 1.0 --condition_on_previous_text True"
+      outputFormat: "srt"    # Validated file extension
+      whisperParams: "--model large-v3 --beam_size 5 --temperature 0.0 --best_of 5 --word_timestamps True --threads 16 --patience 1.0 --condition_on_previous_text True"
 
   - name: Format Transcription
     module: format
     parameters:
-      input: "${output}/transcript.srt"  # Use the output from transcribe step
-      outputFileName: "transcript"   # Set consistent output file name
-      removePatterns: # Will remove these patterns from the transcript
+      # Input: Transcript from previous step
+      input: "${output}/transcript.srt"
+      # Output: Cleaned transcript in output directory
+      outputFileName: "transcript"
+      removePatterns:
         - "Subtítulos realizados por la comunidad de Amara\\.org"
       cleanFileSuffix: "_clean"
 
   - name: Correct With ChatGPT
     module: chatgpt
     parameters:
-      input: "${output}/transcript_clean.txt"  # Use the output from format step
-      outputFileName: "transcript_corrected"    # Specific output file name (without extension)
-      promptTemplate: "./prompts/transcription_correction.yaml"  # Using YAML prompt template
-      targetLanguage: "auto"   # Auto-detect language
+      # Input: Cleaned transcript from previous step
+      input: "${output}/transcript_clean.txt"
+      # Output: Corrected transcript in output directory
+      outputFileName: "transcript_corrected"
+      promptTemplate: "./prompts/transcription_correction.yaml"
+      targetLanguage: "auto"
       model: "gpt-4o"
       temperature: 0.1
-      maxTokens: 16000
-      outputSuffix: "_corrected" 
+      maxTokens: 128000        # Maximum response tokens for GPT-4
+      outputSuffix: "_corrected"
+      requestTimeoutMs: 300000  # 5 minutes timeout
+      chunkSize: 120000        # Process in chunks of 120k tokens
       
   - name: Generate Social Media Content
     module: sns
     parameters:
-      input: "${output}/transcript_corrected.txt"  # Use the output from chatgpt step
-      outputFileName: "social_media_content"     # Set descriptive output file name
+      # Input: Corrected transcript from previous step
+      input: "${output}/transcript_corrected.txt"
+      # Output: Social media content in output directory
+      outputFileName: "social_media_content"
       model: "gpt-4o"
       temperature: 0.8  # Slightly higher temperature for creative content
       maxTokens: 16000   # Increased for more detailed content
@@ -59,21 +79,41 @@ steps:
   - name: Generate Shorts Suggestions
     module: shorts
     parameters:
-      input: "${output}/transcript_corrected.txt"  # Use the corrected transcript
-      outputFileName: "shorts_suggestions"         # Output YAML file name (without extension)
+      # Input: Original transcript for timing information
+      input: "${output}/transcript.srt"
+      # Output: Shorts suggestions YAML in output directory
+      outputFileName: "shorts_suggestions"
       model: "gpt-4o"
-      temperature: 0.8                             # Higher temperature for creative suggestions
+      temperature: 0.9                             # Higher temperature for creative suggestions
       maxTokens: 16000
-      minDuration: 30                              # Minimum clip duration in seconds
-      maxDuration: 60                              # Maximum clip duration in seconds
-      promptFilePath: "./prompts/shorts_prompts.yaml"  # Quality-focused prompt template that doesn't limit number of suggestions
+      minDuration: 45                              # Minimum clip duration in seconds
+      maxDuration: 75                              # Maximum clip duration in seconds
+      promptFilePath: "./prompts/shorts_prompts.yaml"  # Quality-focused prompt template
+      requestTimeoutMs: 300000  # 5 minutes
+      chunkSize: 120000        # Adjust based on your needs
       
   - name: Extract Shorts Clips
     module: extractshorts
     parameters:
-      input: "${output}/shorts_suggestions.yaml"   # Use the shorts suggestions YAML from previous step
-      videoFile: "./tests/video-test.mov"          # IMPORTANT: Should match the original input video
-      outputFormat: "mp4"                          # Output video format
-      ffmpegParams: "-c:v libx264 -c:a aac -b:a 128k"  # Optional: encode to reduce file size
-      quietFlag: true                              # Suppress verbose ffmpeg output
+      # Input: Shorts suggestions and original video
+      input: "${output}/shorts_suggestions.yaml"
+      videoFile: "./tests/video-test.mov"  # Original input video file
+      # Output: Shorts clips in output/shorts directory
+      ffmpegParams: "-vf scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1 -c:v libx264 -c:a aac -b:a 128k -b:v 2500k"
+      quietFlag: true
       
+  - name: Add Text Overlay
+    module: addtext
+    parameters:
+      # Input: Shorts suggestions and original video
+      input: "${output}/shorts_suggestions.yaml"
+      videoFile: "./tests/video-test.mov"  # Original input video file
+      # Output: Shorts with text in output/shorts_with_text directory
+      fontSize: 50
+      fontColor: "white"
+      boxColor: "black@0.5"
+      boxBorderW: 5
+      quietFlag: true
+      fontFile: "/System/Library/Fonts/Helvetica.ttc"  # Native macOS font
+      textX: "(w-text_w)/2"
+      textY: "(h/3)-50"

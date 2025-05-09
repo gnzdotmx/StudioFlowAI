@@ -34,7 +34,8 @@ type Params struct {
 	Temperature      float64 `json:"temperature"`      // Model temperature (default: 0.1)
 	MaxTokens        int     `json:"maxTokens"`        // Maximum tokens for the response (default: 4000)
 	TargetLanguage   string  `json:"targetLanguage"`   // Target language for corrections (default: "English")
-	RequestTimeoutMS int     `json:"requestTimeoutMs"` // API request timeout in milliseconds (default: 60000)
+	RequestTimeoutMS int     `json:"requestTimeoutMs"` // API request timeout in milliseconds (default: 300000)
+	ChunkSize        int     `json:"chunkSize"`        // Size of transcript chunks in tokens (default: 120000)
 }
 
 // ChatRequest represents an OpenAI API request
@@ -94,42 +95,14 @@ func (m *Module) Validate(params map[string]interface{}) error {
 		return err
 	}
 
-	if p.Input == "" {
-		return fmt.Errorf("input path is required")
+	// Validate input path
+	if err := utils.ValidateInputPath(p.Input, p.Output, p.InputFileName); err != nil {
+		return err
 	}
 
-	if p.Output == "" {
-		return fmt.Errorf("output path is required")
-	}
-
-	// During validation, we don't check file existence for input files inside an output directory,
-	// as they'll be created during workflow execution.
-	// Also, don't validate against inputFileName as it may not be resolved to an actual path yet.
-	// Just ensure parameters are present.
-	if p.InputFileName != "" {
-		// If we have a specific filename, validation is sufficient
-		// Skip file existence check as this could be created during workflow execution
-		return nil
-	}
-
-	// Only validate file existence for external input paths
-	_, err := os.Stat(p.Input)
-	if err != nil {
-		// For files that don't exist, check if they might be in the output directory
-		// as they could be created by previous steps
-		if strings.Contains(p.Input, p.Output) ||
-			strings.Contains(p.Input, "output") ||
-			filepath.Base(p.Input) == "transcript_clean.txt" {
-			// Skip validation for expected output files
-			return nil
-		}
-		return fmt.Errorf("input file does not exist: %w", err)
-	}
-
-	// Check if it's a directory but no inputFileName is provided
-	fileInfo, err := os.Stat(p.Input)
-	if err == nil && fileInfo.IsDir() && p.InputFileName == "" {
-		return fmt.Errorf("input is a directory but no inputFileName specified")
+	// Validate output path
+	if err := utils.ValidateOutputPath(p.Output); err != nil {
+		return err
 	}
 
 	// Check if the API key is set - just warn but don't error
@@ -171,7 +144,10 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 		p.TargetLanguage = "English"
 	}
 	if p.RequestTimeoutMS == 0 {
-		p.RequestTimeoutMS = 60000 // 60 seconds default
+		p.RequestTimeoutMS = 300000 // 5 minutes default
+	}
+	if p.ChunkSize == 0 {
+		p.ChunkSize = 120000 // Default chunk size for GPT-4
 	}
 
 	// Create output directory if it doesn't exist
@@ -185,14 +161,17 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 		return fmt.Errorf("failed to load prompt template: %w", err)
 	}
 
+	// Resolve the input path if it contains ${output}
+	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
+
 	// Verify input exists at execution time (now that previous steps have completed)
-	fileInfo, err := os.Stat(p.Input)
+	fileInfo, err := os.Stat(resolvedInput)
 	if err != nil {
 		return fmt.Errorf("input file not found: %w", err)
 	}
 
 	if fileInfo.IsDir() {
-		return fmt.Errorf("input must be a file, not a directory: %s", p.Input)
+		return fmt.Errorf("input must be a file, not a directory: %s", resolvedInput)
 	}
 
 	// Determine output file name
@@ -200,16 +179,16 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 	if p.OutputFileName != "" {
 		outputPath = filepath.Join(p.Output, p.OutputFileName+".txt")
 	} else {
-		baseFilename := filepath.Base(p.Input)
+		baseFilename := filepath.Base(resolvedInput)
 		baseFilename = baseFilename[:len(baseFilename)-len(filepath.Ext(baseFilename))]
 		outputPath = filepath.Join(p.Output, baseFilename+p.OutputSuffix+".txt")
 	}
 
-	if err := m.processFile(ctx, p.Input, outputPath, promptTemplate, p); err != nil {
+	if err := m.processFile(ctx, resolvedInput, outputPath, promptTemplate, p); err != nil {
 		return err
 	}
 
-	fmt.Println(utils.Success(fmt.Sprintf("Corrected file %s -> %s", p.Input, outputPath)))
+	fmt.Println(utils.Success(fmt.Sprintf("Corrected file %s -> %s", resolvedInput, outputPath)))
 	return nil
 }
 
@@ -345,43 +324,90 @@ func (m *Module) processFile(ctx context.Context, inputPath, outputPath, promptT
 
 	utils.LogVerbose("Processing %s with ChatGPT...", filepath.Base(inputPath))
 
-	// Create a timeout context for the API request
-	apiCtx, cancel := context.WithTimeout(ctx, time.Duration(p.RequestTimeoutMS)*time.Millisecond)
-	defer cancel()
+	// Split transcript into chunks if needed
+	chunks := m.splitTranscript(transcript, p.ChunkSize)
+	var correctedChunks []string
 
-	// Construct the full prompt
-	fullPrompt := promptTemplate
-	if !strings.HasSuffix(fullPrompt, ":") && !strings.HasSuffix(fullPrompt, "\n") {
-		fullPrompt += "\n\n"
-	}
-	fullPrompt += fmt.Sprintf("Target language: %s\n\n", p.TargetLanguage)
-	fullPrompt += transcript
+	// Process each chunk
+	for i, chunk := range chunks {
+		utils.LogVerbose("Processing chunk %d/%d...", i+1, len(chunks))
 
-	// Create the API request
-	messages := []ChatMessage{
-		{
-			Role:    "system",
-			Content: "You are a helpful assistant that corrects transcription errors.",
-		},
-		{
-			Role:    "user",
-			Content: fullPrompt,
-		},
+		// Create a timeout context for the API request
+		apiCtx, cancel := context.WithTimeout(ctx, time.Duration(p.RequestTimeoutMS)*time.Millisecond)
+		defer cancel()
+
+		// Construct the full prompt for this chunk
+		fullPrompt := promptTemplate
+		if !strings.HasSuffix(fullPrompt, ":") && !strings.HasSuffix(fullPrompt, "\n") {
+			fullPrompt += "\n\n"
+		}
+		fullPrompt += fmt.Sprintf("Target language: %s\n\n", p.TargetLanguage)
+		fullPrompt += fmt.Sprintf("Processing chunk %d of %d:\n\n", i+1, len(chunks))
+		fullPrompt += chunk
+
+		// Create the API request
+		messages := []ChatMessage{
+			{
+				Role:    "system",
+				Content: "You are a helpful assistant that corrects transcription errors.",
+			},
+			{
+				Role:    "user",
+				Content: fullPrompt,
+			},
+		}
+
+		// Send the request to ChatGPT
+		response, err := m.callChatGPT(apiCtx, messages, p)
+		if err != nil {
+			return fmt.Errorf("ChatGPT API request failed for chunk %d: %w", i+1, err)
+		}
+
+		correctedChunks = append(correctedChunks, response)
 	}
 
-	// Send the request to ChatGPT
-	response, err := m.callChatGPT(apiCtx, messages, p)
-	if err != nil {
-		return fmt.Errorf("ChatGPT API request failed: %w", err)
-	}
+	// Combine all corrected chunks
+	correctedText := strings.Join(correctedChunks, "\n\n")
 
 	// Write the corrected transcript to the output file
-	if err := utils.WriteTextFile(outputPath, response); err != nil {
+	if err := utils.WriteTextFile(outputPath, correctedText); err != nil {
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
 
 	utils.LogSuccess("Corrected file %s -> %s", p.Input, outputPath)
 	return nil
+}
+
+// splitTranscript splits a transcript into chunks of approximately the specified token size
+func (m *Module) splitTranscript(transcript string, chunkSize int) []string {
+	// Simple splitting by paragraphs first
+	paragraphs := strings.Split(transcript, "\n\n")
+	var chunks []string
+	var currentChunk strings.Builder
+	currentSize := 0
+
+	for _, paragraph := range paragraphs {
+		// Rough estimate of tokens (4 characters ≈ 1 token)
+		paragraphSize := len(paragraph) / 4
+
+		if currentSize+paragraphSize > chunkSize && currentSize > 0 {
+			// Current chunk is full, start a new one
+			chunks = append(chunks, currentChunk.String())
+			currentChunk.Reset()
+			currentSize = 0
+		}
+
+		currentChunk.WriteString(paragraph)
+		currentChunk.WriteString("\n\n")
+		currentSize += paragraphSize
+	}
+
+	// Add the last chunk if it's not empty
+	if currentChunk.Len() > 0 {
+		chunks = append(chunks, currentChunk.String())
+	}
+
+	return chunks
 }
 
 // callChatGPT sends a request to the OpenAI API
