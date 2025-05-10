@@ -1,0 +1,43 @@
+name: Improve Transcript with ChatGPT
+description: Improve a transcript using ChatGPT for better readability and accuracy
+output: ./output
+# Results will be stored in a subfolder named like "Improve_Transcript_with_ChatGPT-20231015-120530"
+
+steps:
+  - name: Improve Transcript
+    module: chatgpt
+    parameters:
+      # Input: Transcript file to improve
+      # Can be specified in three ways:
+      # 1. Via CLI using -i flag: studioflowai run -w chatgpt_only.yaml -i ./input/transcript.srt
+      # 2. In the workflow file (as shown below)
+      # 3. From a previous step's output in the workflow
+      input: "./input/transcript.srt"                 # Transcript file to improve (REQUIRED - replace with your transcript path)
+      # Output: Improved transcript in output directory
+      outputFileName: "transcript_improved"           # Will create transcript_improved.txt in output directory
+      promptTemplate: "./prompts/transcription_correction.yaml"
+      targetLanguage: "auto"
+      # Optional: Customize the improvement
+      model: "gpt-4"                                 # OpenAI model to use
+      temperature: 0.7                               # Higher values = more creative output
+      maxTokens: 4000                                # Maximum tokens for response
+      outputSuffix: "_improved"
+      requestTimeoutMs: 300000  # 5 minutes timeout
+      chunkSize: 120000        # Process in chunks of 120k tokens
+      # Optional: Add custom instructions
+      # instructions:
+      #   - "Fix any grammatical errors"
+      #   - "Improve sentence structure"
+      #   - "Maintain the original meaning"
+      #   - "Keep technical terms accurate"
+
+# Example usage:
+# 1. Using CLI input:
+#    studioflowai run -w chatgpt_only.yaml -i ./input/transcript.srt
+#
+# 2. Using workflow input parameter:
+#    studioflowai run -w chatgpt_only.yaml
+#
+# 3. As part of a larger workflow:
+#    - First run the transcribe module to get transcript
+#    - Then run this workflow to improve it 

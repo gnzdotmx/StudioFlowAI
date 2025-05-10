@@ -1,0 +1,41 @@
+name: Generate Shorts from Video
+description: Extract audio, transcribe, and generate shorts suggestions from a video
+
+# Input Configuration
+# The input video file can be specified in three ways:
+# 1. Via CLI using the -i flag: studioflowai run -w shorts_only.yaml -i ./input/video.mp4
+# 2. In the workflow file (first step's input parameter)
+# 3. From a previous step's output in the workflow
+
+# Output Configuration
+# The output directory will be automatically created with timestamp:
+# ./output/Generate_Shorts_from_Video-YYYYMMDD-HHMMSS/
+# Each module's output will be stored in this directory
+
+steps:
+  - name: Generate Shorts Suggestions
+    module: shorts
+    parameters:
+      # Input: Original transcript for timing information
+      input: "${output}/transcript.srt"
+      # Output: Shorts suggestions YAML in output directory
+      outputFileName: "shorts_suggestions"
+      model: "gpt-4o"
+      temperature: 0.9                             # Higher temperature for creative suggestions
+      maxTokens: 16000
+      minDuration: 45                              # Minimum clip duration in seconds
+      maxDuration: 75                              # Maximum clip duration in seconds
+      promptFilePath: "./prompts/shorts_prompts.yaml"  # Quality-focused prompt template
+      requestTimeoutMs: 300000  # 5 minutes
+      chunkSize: 120000        # Adjust based on your needs
+
+# Example usage:
+# 1. Using CLI input:
+#    studioflowai run -w shorts_only.yaml -i ./input/video.mp4
+#
+# 2. Using workflow input parameter:
+#    studioflowai run -w shorts_only.yaml
+#
+# 3. As part of a larger workflow:
+#    - First run this workflow to generate shorts suggestions
+#    - Then use extractshorts and addtext modules to create the actual shorts 

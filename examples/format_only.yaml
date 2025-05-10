@@ -1,0 +1,39 @@
+name: Format Transcript
+description: Format a transcript file by removing unwanted patterns and timestamps
+output: ./output
+# Results will be stored in a subfolder named like "Format_Transcript-20231015-120530"
+
+steps:
+  - name: Format Transcript
+    module: format
+    parameters:
+      # Input: Transcript file to format
+      # Can be specified in three ways:
+      # 1. Via CLI using -i flag: studioflowai run -w format_only.yaml -i ./input/transcript.srt
+      # 2. In the workflow file (as shown below)
+      # 3. From a previous step's output in the workflow
+      input: "./input/transcript.srt"                 # Transcript file to format (REQUIRED - replace with your transcript path)
+      # Output: Formatted transcript in output directory
+      outputFileName: "transcript_formatted"          # Will create transcript_formatted.txt in output directory
+      # Optional: Customize the formatting
+      removeTimestamps: true                         # Remove timestamp lines
+      removePatterns:                                # Patterns to remove from text
+        - "\\[.*?\\]"                               # Remove text in square brackets
+        - "\\(.*?\\)"                               # Remove text in parentheses
+        - "^\\d+$"                                  # Remove standalone numbers
+      # Optional: Add custom patterns
+      # customPatterns:
+      #   - "\\[Music\\]"                           # Remove [Music] markers
+      #   - "\\[Applause\\]"                        # Remove [Applause] markers
+      cleanFileSuffix: "_clean"
+
+# Example usage:
+# 1. Using CLI input:
+#    studioflowai run -w format_only.yaml -i ./input/transcript.srt
+#
+# 2. Using workflow input parameter:
+#    studioflowai run -w format_only.yaml
+#
+# 3. As part of a larger workflow:
+#    - First run the transcribe module to get transcript
+#    - Then run this workflow to format it 
