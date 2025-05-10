@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gnzdotmx/studioflowai/studioflowai/internal/config"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/addtext"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/chatgpt"
@@ -37,18 +38,20 @@ type Workflow struct {
 	Steps       []Step `yaml:"steps"`
 
 	// Registry holds all available modules
-	registry *modules.ModuleRegistry
+	registry    *modules.ModuleRegistry
+	inputConfig *config.InputConfig
 }
 
 // NewWorkflow creates a new workflow with the default module registry
-func NewWorkflow(registry *modules.ModuleRegistry) *Workflow {
+func NewWorkflow(registry *modules.ModuleRegistry, inputConfig *config.InputConfig) *Workflow {
 	return &Workflow{
-		registry: registry,
+		registry:    registry,
+		inputConfig: inputConfig,
 	}
 }
 
 // LoadFromFile loads a workflow definition from a YAML file
-func LoadFromFile(path string) (*Workflow, error) {
+func LoadFromFile(inputConfig *config.InputConfig) (*Workflow, error) {
 	// Create a registry with all available modules
 	registry := modules.NewModuleRegistry()
 
@@ -56,10 +59,10 @@ func LoadFromFile(path string) (*Workflow, error) {
 	registerModules(registry)
 
 	// Create a new workflow with the registry
-	workflow := NewWorkflow(registry)
+	workflow := NewWorkflow(registry, inputConfig)
 
 	// Read the YAML file
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(inputConfig.WorkflowPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read workflow file: %w", err)
 	}
@@ -92,44 +95,75 @@ func (w *Workflow) ValidateStructure() error {
 
 // ModuleIO defines the expected inputs and outputs for a module
 type ModuleIO struct {
-	Inputs  []string
-	Outputs []string
+	// InputPatterns defines patterns to match input files
+	InputPatterns []string
+	// OutputPatterns defines patterns to match output files
+	OutputPatterns []string
 }
 
-// ModuleIORegistry maps module names to their expected inputs and outputs
+// ModuleIORegistry maps module names to their expected file patterns
 var ModuleIORegistry = map[string]ModuleIO{
 	"extract": {
-		Inputs:  []string{"video"},
-		Outputs: []string{"audio.wav"},
+		InputPatterns:  []string{"*.mp4", "*.mov", "*.avi", "*.mkv", "*.webm"},
+		OutputPatterns: []string{"*.wav"},
 	},
 	"transcribe": {
-		Inputs:  []string{"audio.wav"},
-		Outputs: []string{"transcript.srt"},
+		InputPatterns:  []string{"*.wav"},
+		OutputPatterns: []string{"*.srt"},
 	},
 	"format": {
-		Inputs:  []string{"transcript.srt"},
-		Outputs: []string{"transcript_clean.txt"},
+		InputPatterns:  []string{"*.srt"},
+		OutputPatterns: []string{"*.txt"},
 	},
 	"chatgpt": {
-		Inputs:  []string{"transcript_clean.txt"},
-		Outputs: []string{"transcript_corrected.txt"},
+		InputPatterns:  []string{"*.txt"},
+		OutputPatterns: []string{"*.txt"},
 	},
 	"sns": {
-		Inputs:  []string{"transcript_corrected.txt"},
-		Outputs: []string{"social_media_content.txt"},
+		InputPatterns:  []string{"*.txt"},
+		OutputPatterns: []string{"*.txt"},
 	},
 	"shorts": {
-		Inputs:  []string{"transcript_corrected.txt"},
-		Outputs: []string{"shorts_suggestions.yaml"},
+		InputPatterns:  []string{"*.txt"},
+		OutputPatterns: []string{"*.yaml"},
 	},
 	"extractshorts": {
-		Inputs:  []string{"shorts_suggestions.yaml", "video"},
-		Outputs: []string{"shorts/"},
+		InputPatterns:  []string{"*.yaml", "*.mp4", "*.mov", "*.avi", "*.mkv", "*.webm"},
+		OutputPatterns: []string{"shorts/*"},
 	},
 	"addtext": {
-		Inputs:  []string{"shorts_suggestions.yaml", "video"},
-		Outputs: []string{"shorts_with_text/"},
+		InputPatterns:  []string{"*.yaml", "*.mp4", "*.mov", "*.avi", "*.mkv", "*.webm"},
+		OutputPatterns: []string{"shorts_with_text/*"},
 	},
+}
+
+// matchFilePattern checks if a file matches any of the given patterns
+func matchFilePattern(file string, patterns []string) bool {
+	for _, pattern := range patterns {
+		matched, err := filepath.Match(pattern, filepath.Base(file))
+		if err == nil && matched {
+			return true
+		}
+	}
+	return false
+}
+
+// findMatchingFile looks for a file matching the patterns in the given directory
+func findMatchingFile(dir string, patterns []string) (string, error) {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		if matchFilePattern(file.Name(), patterns) {
+			return filepath.Join(dir, file.Name()), nil
+		}
+	}
+	return "", fmt.Errorf("no matching file found for patterns %v", patterns)
 }
 
 // ValidateBeforeRun performs a complete validation including modules
@@ -137,6 +171,16 @@ func (w *Workflow) ValidateBeforeRun() error {
 	// First check basic structure
 	if err := w.ValidateStructure(); err != nil {
 		return err
+	}
+
+	// Set input and output paths from inputConfig if provided
+	if w.inputConfig != nil {
+		if w.inputConfig.InputPath != "" {
+			w.Input = w.inputConfig.InputPath
+		}
+		if w.inputConfig.OutputPath != "" {
+			w.Output = w.inputConfig.OutputPath
+		}
 	}
 
 	// Validate the input for the first step if global input is specified
@@ -206,6 +250,9 @@ func (w *Workflow) ValidateBeforeRun() error {
 	runName := fmt.Sprintf("%s-%s", strings.ReplaceAll(w.Name, " ", "_"), timestamp)
 	outputDir := filepath.Join(baseOutputDir, runName)
 
+	// Set the output directory
+	w.Output = outputDir
+
 	// Track available outputs for chain validation
 	availableOutputs := make(map[string]bool)
 	if w.Input != "" {
@@ -249,8 +296,39 @@ func (w *Workflow) ValidateBeforeRun() error {
 		// For first step, always use the CLI input if provided
 		if i == 0 {
 			if w.Input != "" {
-				params["input"] = w.Input
-				utils.LogDebug("Using CLI input file: %s", w.Input)
+				if step.Module == "extractshorts" || step.Module == "addtext" {
+					params["videoFile"] = w.Input
+					params["input"] = step.Parameters["input"].(string)
+					utils.LogDebug("[ValidateBeforeRun] Using CLI input as videoFile: %s", w.Input)
+					utils.LogDebug("[ValidateBeforeRun] Using CLI input as input: %s", step.Parameters["input"])
+				} else {
+					params["input"] = w.Input
+					utils.LogDebug("Using CLI input file: %s", w.Input)
+				}
+			}
+		} else {
+			// For subsequent steps, try to find matching input files from previous outputs
+			// Get required inputs from module configuration
+			if inputs, ok := params["inputs"].([]interface{}); ok {
+				for _, input := range inputs {
+					inputStr, ok := input.(string)
+					if !ok {
+						continue
+					}
+					if !availableOutputs[inputStr] {
+						// Try to find a matching file in the output directory
+						if matchingFile, err := findMatchingFile(w.Output, moduleIO.InputPatterns); err == nil {
+							params["input"] = matchingFile
+							utils.LogDebug("Found matching input file: %s", matchingFile)
+							availableOutputs[inputStr] = true
+						} else {
+							return &utils.ValidationError{
+								Field:   fmt.Sprintf("step_%d", i+1),
+								Message: fmt.Sprintf("required input %s not available from previous steps", inputStr),
+							}
+						}
+					}
+				}
 			}
 		}
 
@@ -299,19 +377,13 @@ func (w *Workflow) ValidateBeforeRun() error {
 			}
 		}
 
-		// Validate that all required inputs are available
-		for _, input := range moduleIO.Inputs {
-			if !availableOutputs[input] {
-				return &utils.ValidationError{
-					Field:   fmt.Sprintf("step_%d", i+1),
-					Message: fmt.Sprintf("required input %s not available from previous steps", input),
+		// Add this step's outputs to available outputs
+		if outputs, ok := params["outputs"].([]interface{}); ok {
+			for _, output := range outputs {
+				if outputStr, ok := output.(string); ok {
+					availableOutputs[outputStr] = true
 				}
 			}
-		}
-
-		// Add this step's outputs to available outputs
-		for _, output := range moduleIO.Outputs {
-			availableOutputs[output] = true
 		}
 	}
 
@@ -323,6 +395,16 @@ func (w *Workflow) ValidateForRetry(workflowName string) error {
 	// Check basic structure
 	if err := w.ValidateStructure(); err != nil {
 		return err
+	}
+
+	// Set input and output paths from inputConfig if provided
+	if w.inputConfig != nil {
+		if w.inputConfig.InputPath != "" {
+			w.Input = w.inputConfig.InputPath
+		}
+		if w.inputConfig.OutputPath != "" {
+			w.Output = w.inputConfig.OutputPath
+		}
 	}
 
 	// Initialize validate flag before the loop
@@ -404,33 +486,12 @@ func (w *Workflow) Execute() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
 	defer cancel()
 
-	// Determine the base output directory from the input file
-	var baseOutputDir string
-	if w.Input != "" {
-		// Use the input file's directory
-		baseOutputDir = filepath.Join(filepath.Dir(w.Input), "output")
-	} else if len(w.Steps) > 0 {
-		// Use the first step's input directory
-		if input, ok := w.Steps[0].Parameters["input"].(string); ok {
-			baseOutputDir = filepath.Join(filepath.Dir(input), "output")
-		} else {
-			return fmt.Errorf("could not determine output directory: no input file specified")
-		}
-	} else {
-		return fmt.Errorf("could not determine output directory: no steps defined")
-	}
-
-	// Create a timestamp-based subfolder for this run
-	timestamp := time.Now().Format("20060102-150405")
-	runName := fmt.Sprintf("%s-%s", strings.ReplaceAll(w.Name, " ", "_"), timestamp)
-	outputDir := filepath.Join(baseOutputDir, runName)
-
 	// Ensure output directory exists
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(w.Output, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	utils.LogDebug("Results will be stored in: %s", outputDir)
+	utils.LogDebug("Results will be stored in: %s", w.Output)
 
 	// Execute each step in sequence
 	for i, step := range w.Steps {
@@ -456,7 +517,7 @@ func (w *Workflow) Execute() error {
 				// Handle variable substitution
 				// Replace ${output} with the actual output directory
 				if strings.Contains(str, "${output}") {
-					v = strings.ReplaceAll(str, "${output}", outputDir)
+					v = strings.ReplaceAll(str, "${output}", w.Output)
 					utils.LogDebug("Resolved path %s to %s", str, v)
 				}
 			}
@@ -473,6 +534,7 @@ func (w *Workflow) Execute() error {
 
 		// Set videoFile parameter for modules that need it
 		if step.Module == "extractshorts" || step.Module == "addtext" {
+			// Only set videoFile from CLI input if it's not already specified in parameters
 			if w.Input != "" {
 				params["videoFile"] = w.Input
 				utils.LogDebug("Using CLI input as videoFile: %s", w.Input)
@@ -480,7 +542,7 @@ func (w *Workflow) Execute() error {
 		}
 
 		// Always set the output parameter
-		params["output"] = outputDir
+		params["output"] = w.Output
 
 		// Execute the module
 		if err := module.Execute(ctx, params); err != nil {
@@ -492,38 +554,8 @@ func (w *Workflow) Execute() error {
 	}
 
 	utils.LogSuccess("Workflow completed: %s", w.Name)
-	utils.LogDebug("Results stored in: %s", outputDir)
+	utils.LogDebug("Results stored in: %s", w.Output)
 	return nil
-}
-
-// registerModules registers all available modules with the registry
-func registerModules(registry *modules.ModuleRegistry) {
-	// Register modules
-	registry.Register(extract.New())
-	registry.Register(split.New())
-	registry.Register(transcribe.New())
-	registry.Register(format.New())
-	registry.Register(chatgpt.New())
-	registry.Register(chatgpt.NewSNS())
-	registry.Register(chatgpt.NewShorts())
-	registry.Register(extractshorts.New())
-	registry.Register(addtext.New())
-}
-
-// SetInputPath overrides the input path defined in the workflow
-func (w *Workflow) SetInputPath(path string) {
-	// Verify that the input is a file, not a directory
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		utils.LogError("Input file does not exist: %s", path)
-		return
-	}
-	if fileInfo.IsDir() {
-		utils.LogError("Input must be a file, not a directory: %s", path)
-		return
-	}
-	w.Input = path
-	utils.LogInfo("Using input file from CLI: %s", path)
 }
 
 // ExecuteRetry runs the workflow continuing from a previous failed execution
@@ -644,6 +676,36 @@ func (w *Workflow) ExecuteRetry(outputFolderPath, workflowName string) error {
 	utils.LogSuccess("Workflow completed after retry: %s", w.Name)
 	utils.LogDebug("Results stored in: %s", w.Output)
 	return nil
+}
+
+// registerModules registers all available modules with the registry
+func registerModules(registry *modules.ModuleRegistry) {
+	// Register modules
+	registry.Register(extract.New())
+	registry.Register(split.New())
+	registry.Register(transcribe.New())
+	registry.Register(format.New())
+	registry.Register(chatgpt.New())
+	registry.Register(chatgpt.NewSNS())
+	registry.Register(chatgpt.NewShorts())
+	registry.Register(extractshorts.New())
+	registry.Register(addtext.New())
+}
+
+// SetInputPath overrides the input path defined in the workflow
+func (w *Workflow) SetInputPath(path string) {
+	// Verify that the input is a file, not a directory
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		utils.LogError("Input file does not exist: %s", path)
+		return
+	}
+	if fileInfo.IsDir() {
+		utils.LogError("Input must be a file, not a directory: %s", path)
+		return
+	}
+	w.Input = path
+	utils.LogInfo("Using input file from CLI: %s", path)
 }
 
 // SetOutputPath overrides the output path defined in the workflow

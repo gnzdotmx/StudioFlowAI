@@ -42,17 +42,9 @@ var runCmd = &cobra.Command{
 		}
 
 		// Load the workflow without full validation
-		wf, err := workflow.LoadFromFile(inputConfig.WorkflowPath)
+		wf, err := workflow.LoadFromFile(inputConfig)
 		if err != nil {
 			return fmt.Errorf("failed to load workflow: %w", err)
-		}
-
-		// Set input and output paths
-		if inputConfig.InputPath != "" {
-			wf.SetInputPath(inputConfig.InputPath)
-		}
-		if inputConfig.OutputPath != "" {
-			wf.SetOutputPath(inputConfig.OutputPath)
 		}
 
 		// Execute the workflow
