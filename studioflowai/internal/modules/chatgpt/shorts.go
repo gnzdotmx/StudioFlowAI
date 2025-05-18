@@ -45,7 +45,7 @@ type ShortClip struct {
 	EndTime     string `yaml:"endTime"`     // End timestamp in HH:MM:SS format
 	Description string `yaml:"description"` // Additional description/context
 	Tags        string `yaml:"tags"`        // Suggested tags for the short
-	Question    string `yaml:"question"`    // Question to ask the user
+	ShortTitle  string `yaml:"short_title"` // Short title for the video clip
 }
 
 // ShortsOutput defines the structure of the shorts YAML output
@@ -176,10 +176,10 @@ func (m *ShortsModule) Execute(ctx context.Context, params map[string]interface{
 				{
 					Title:       "API Key Required",
 					StartTime:   "00:00:00",
-					EndTime:     "00:00:15",
+					EndTime:     "00:00:03",
 					Description: "Please set the OPENAI_API_KEY environment variable to generate shorts suggestions.",
 					Tags:        "api-key-missing, setup-required",
-					Question:    "Please set the OPENAI_API_KEY environment variable to generate shorts suggestions.",
+					ShortTitle:  "Please set the OPENAI_API_KEY environment variable to generate shorts suggestions.",
 				},
 			},
 		}
@@ -634,36 +634,63 @@ func parseShortsResponse(content string) ([]ShortClip, error) {
 
 // getShortsPrompt returns the default prompt for shorts suggestions
 func getShortsPrompt() string {
-	return `Analyze the following video transcript deeply to identify segments that would make exceptional short-form videos of %d-%d seconds in length.
+	return `title: "High-Quality Short Video Clips Suggestion"
+role: "senior viral content strategist"
+description: "This prompt helps identify the most engaging parts of a video for high-performance short-form content"
 
-IMPORTANT: Quality over quantity. Instead of generating a fixed number of suggestions, carefully evaluate the entire transcript and only suggest clips that are truly engaging, educational, or entertaining. Each short must be able to stand alone as compelling content.
+prompt: |
+  ## CRITICAL REQUIREMENTS:
+  1. COMPLETE COVERAGE: Analyze the ENTIRE transcript to the END. NEVER STOP early.
+  2. SPANISH OUTPUT: Generate ALL content (titles, descriptions, tags, short_title) in SPANISH for Spanish-speaking audiences.
+  3. TOPIC IDENTIFICATION: Identify all main topics/themes discussed in the video.
+  4. MINIMUM CLIPS PER TOPIC: Create AT LEAST 3 shorts for EACH identified topic.
+  5. DISTRIBUTION: Ensure clips are distributed evenly across beginning, middle, and end.
+  6. DURATION: Each clip should be between %s and %s seconds.
+  7. YAML FORMAT: Use EXACTLY the format shown in the example - respect indentation with spaces.
 
-For each high-quality suggestion:
-1. Identify segments with genuinely memorable content that will resonate with viewers
-2. Provide a catchy, clickable title for each short
-3. Give precise start and end timestamps in HH:MM:SS format
-4. Write a compelling description of what happens in this segment and why it's engaging
-5. Suggest 3-5 strategic hashtags or keywords to maximize reach and engagement
+  ## REQUIRED YAML FORMAT (USE EXACTLY THIS FORMAT):
+  yaml
+  ---------
+  sourceVideo: ${source_video}
+  shorts:
+    - title: "Título atractivo using #hashtags format"
+      startTime: "hh:mm:ss"
+      endTime: "hh:mm:ss"
+      description: "Descripción detallada que explica por qué este momento es interesante"
+      tags: "#Hashtag1 #Hashtag2 #Hashtag3"
+      short_title: "Descripción corta que del video"
+  ---------
 
-Format your response as a list of JSON objects with these fields:
-- title: A catchy, attention-grabbing title for the short
-- startTime: Start timestamp in HH:MM:SS format
-- endTime: End timestamp in HH:MM:SS format
-- description: A detailed description of what makes this segment compelling
-- tags: Strategic hashtags or keywords for the short
+  ## YAML SAFETY GUIDELINES (VERY IMPORTANT):
+  - RESPECT the INDENTATION exactly as shown in the example (two spaces)
+  - Use quotes for text with special characters like : or -
+  - Avoid line breaks within values
+  - DO NOT INCLUDE COMMENTS like "# Maximum 40 characters" in your final response
+  - VERIFY that your YAML is valid before submitting
+  - short_title: must be no more than 40 characters, try to be creative and interesting
+  - title:  must be maximum 100 characters including high impact hashtags between the name using #hashtags format
 
-SELECTION CRITERIA - Only include segments that meet at least two of these criteria:
-- Contain powerful insights or knowledge bombs that provide clear value
-- Include emotional or surprising moments that create strong reactions
-- Feature exceptionally clear explanations of complex topics
-- Would be interesting and make sense even without additional context
-- Contain a compelling story or anecdote with a clear beginning and end
-- Feature a quotable statement or memorable line that viewers would share
+  ## SELECTION CRITERIA (at least TWO):
+  - Hook factor: Captures attention in first 3 seconds
+  - Viral potential: Motivates sharing/commenting
+  - Emotional impact: Generates strong emotional response
+  - Clear value: Offers specific insight or useful teaching
+  - Self-contained: Understandable without additional context
+  - Quotable: Contains memorable phrase for text overlay
+  - Complete story: Mini-narrative with beginning, development, conclusion
+  - Unique perspective: Surprising or uncommon point of view
 
-IMPORTANT: After identifying potential segments, carefully review each one to confirm it truly stands on its own as compelling short-form content. Only include your highest quality suggestions.
-
-Transcript:
-%s`
+  ## MANDATORY FINAL VERIFICATION:
+  1. Did you analyze the COMPLETE transcript to the end?
+  2. Did you identify all main topics from the conversation?
+  3. Do you have AT LEAST 3 shorts for EACH identified topic?
+  4. Is the YAML format EXACTLY as shown in the example?
+  5. Does the indentation use TWO SPACES (not tabs)?
+  
+  ## IMPORTANT: Your response MUST begin with the required YAML format, without prior explanations.
+  
+  Transcript:
+  %s `
 }
 
 // Min returns the smaller of x or y

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -77,4 +78,16 @@ func WriteTextFile(filePath string, content string) error {
 
 	LogDebug("Successfully wrote content to %s", filePath)
 	return nil
+}
+
+// ExpandHomeDir expands a path if it starts with "~/"
+func ExpandHomeDir(path string) (string, error) {
+	if path[:2] == "~/" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		return filepath.Join(home, path[2:]), nil
+	}
+	return path, nil
 }

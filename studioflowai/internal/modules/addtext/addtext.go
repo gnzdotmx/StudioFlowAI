@@ -50,7 +50,7 @@ type ShortClip struct {
 	EndTime     string `yaml:"endTime"`
 	Description string `yaml:"description"`
 	Tags        string `yaml:"tags"`
-	Question    string `yaml:"question"`
+	ShortTitle  string `yaml:"short_title"`
 }
 
 // New creates a new addtext module
@@ -208,8 +208,8 @@ func (m *Module) processShortClip(ctx context.Context, short ShortClip, p Params
 		fontFileArg = fmt.Sprintf("fontfile=%s:", p.FontFile)
 	}
 
-	// Escape special characters in the question text
-	escapedText := strings.ReplaceAll(short.Question, "'", "\\'")
+	// Escape special characters in the short_title text
+	escapedText := strings.ReplaceAll(short.ShortTitle, "'", "\\'")
 	escapedText = strings.ReplaceAll(escapedText, ":", "\\:")
 	escapedText = strings.ReplaceAll(escapedText, "\\", "\\\\")
 

@@ -21,6 +21,7 @@ StudioFlowAI is a powerful video processing workflow automation tool that helps 
 - 📹 **Shorts Generation**: Create engaging short-form video content
 - 🎨 **Text Overlay**: Add professional text overlays to videos
 - 🔄 **Workflow Automation**: Define and execute complex video processing workflows
+- 🎥 **YouTube Integration**: Automatically upload and schedule YouTube Shorts with tags, descriptions, and playlist management
 
 ## 🚀 Quick Start
 
@@ -175,6 +176,11 @@ For more examples, check the [examples folder](examples).
 ### Video Processing
 - **ExtractShorts**: Generate video clips
 - **AddText**: Add text overlays to videos
+
+### YouTube Integration
+- **UploadYouTubeShorts**: Automatically upload and schedule YouTube Shorts with tags, descriptions, and playlist management
+
+> 📚 For detailed documentation of each module, including setup instructions, configuration options, and best practices, please refer to the [./docs](./docs) folder.
 
 ### Output Structure
 
