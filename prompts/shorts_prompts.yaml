@@ -5,7 +5,7 @@ description: "This prompt helps identify the most engaging parts of a video for 
 prompt: |
   ## CRITICAL REQUIREMENTS:
   1. COMPLETE COVERAGE: Analyze the ENTIRE transcript to the END. NEVER STOP early.
-  2. SPANISH OUTPUT: Generate ALL content (titles, descriptions, tags, question) in SPANISH for Spanish-speaking audiences.
+  2. SPANISH OUTPUT: Generate ALL content (titles, descriptions, tags, short_title) in SPANISH for Spanish-speaking audiences.
   3. TOPIC IDENTIFICATION: Identify all main topics/themes discussed in the video.
   4. MINIMUM CLIPS PER TOPIC: Create AT LEAST 3 shorts for EACH identified topic.
   5. DISTRIBUTION: Ensure clips are distributed evenly across beginning, middle, and end.
@@ -21,7 +21,7 @@ prompt: |
       endTime: "hh:mm:ss"
       description: "Descripción detallada que explica por qué este momento es interesante"
       tags: "#Hashtag1 #Hashtag2 #Hashtag3"
-      question: "¿Pregunta o descripción corta que se responde en el video?"
+      short_title: "¿Pregunta o descripción corta que se responde en el video?"
   ```
 
   ## YAML SAFETY GUIDELINES (VERY IMPORTANT):
@@ -30,7 +30,7 @@ prompt: |
   - Avoid line breaks within values
   - DO NOT INCLUDE COMMENTS like "# Maximum 40 characters" in your final response
   - VERIFY that your YAML is valid before submitting
-  - question: must be no more than 40 characters, try to be creative and interesting
+  - short_title: must be no more than 40 characters, try to be creative and interesting
   - title:  must be maximum 100 characters including high impact hashtags between the name using #hashtags format
 
   ## SELECTION CRITERIA (at least TWO):

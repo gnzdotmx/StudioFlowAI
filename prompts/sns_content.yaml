@@ -54,4 +54,4 @@ timeline:
     07:00 - Continuación del tema X
     01:03:45 - Despedida y cierre
 
-conclusion: "Guarda todo el contenido generado con formato Markdown ordenado y profesional, utilizando encabezados, listas y énfasis apropiados para facilitar su lectura y uso." 
+conclusion: "IMPORTANT: Your response MUST begin with the required YAML format, without prior explanations." 

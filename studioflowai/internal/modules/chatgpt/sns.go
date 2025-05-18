@@ -129,11 +129,11 @@ func (m *SNSModule) Execute(ctx context.Context, params map[string]interface{}) 
 	// Determine output file name
 	var outputPath string
 	if p.OutputFileName != "" {
-		outputPath = filepath.Join(p.Output, p.OutputFileName+".md")
+		outputPath = filepath.Join(p.Output, p.OutputFileName+".yaml")
 	} else {
 		baseFilename := filepath.Base(resolvedInput)
 		baseFilename = baseFilename[:len(baseFilename)-len(filepath.Ext(baseFilename))]
-		outputPath = filepath.Join(p.Output, baseFilename+"_SNS.md")
+		outputPath = filepath.Join(p.Output, baseFilename+"_SNS.yaml")
 	}
 
 	if err := m.processSNSFile(ctx, resolvedInput, outputPath, snsPrompt, p); err != nil {
@@ -160,7 +160,45 @@ func (m *SNSModule) processSNSFile(ctx context.Context, inputPath, outputPath, p
 	// Check if API key is set, if not, save a placeholder file
 	if os.Getenv("OPENAI_API_KEY") == "" {
 		utils.LogWarning("No API key set - saving placeholder file to %s", outputPath)
-		placeholderContent := "# SNS Content Generation\n\nPlease set the OPENAI_API_KEY environment variable to generate SNS content.\n\nTranscript file: " + inputPath
+		placeholderContent := `# MOCK OUTPUT - No OPENAI_API_KEY set
+# Simulated example of generated SNS content in YAML format.
+
+sns_content_generation:
+  introduction: "Analiza el siguiente script de entrevista y genera contenido optimizado para maximizar el alcance y engagement en YouTube."
+
+  title: "El secreto detrás del éxito en ciberseguridad | Entrevista exclusiva"
+
+  description:
+    🚀 Descubre los secretos que llevaron a nuestro invitado a convertirse en una figura clave de la ciberseguridad. 
+    En esta entrevista exclusiva, exploramos su trayectoria, aprendizajes, y consejos para profesionales del sector.
+    🔒 Temas clave, historias impactantes y estrategias reales que puedes aplicar hoy.
+    
+    👉 ¡No olvides suscribirte, dejar tu comentario y compartir este video!
+    
+    #ciberseguridad #infosec #hackingetico #tecnología #entrevistas
+
+  social_media:
+    twitter: "🚨 Nuevo episodio: Entrevista exclusiva sobre ciberseguridad con insights que no te puedes perder 🔐 ¡Dale play ahora! 🎥 #infosec #hackingetico"
+    instagram_facebook: >
+      🔥 ¡Ya disponible! Entrevistamos a uno de los referentes en ciberseguridad 🎙️ Hablamos sobre sus inicios, retos y cómo ve el futuro del sector. 
+      👉 Mira el video completo y comenta qué parte te sorprendió más.
+    linkedin: >
+      Nueva entrevista publicada con un experto en ciberseguridad. Hablamos sobre tendencias, desafíos y cómo los profesionales pueden adaptarse al entorno actual. 
+      Un contenido valioso para quienes lideran equipos de seguridad o aspiran a crecer en esta industria.
+
+  keywords: "ciberseguridad, hacking ético, seguridad informática, entrevistas tecnología, expertos ciberseguridad, SOC, malware, pentesting"
+
+  timeline:
+    - "00:00 - Introducción y contexto"
+    - "03:15 - Trayectoria profesional del invitado"
+    - "10:42 - Principales desafíos en ciberseguridad"
+    - "18:20 - Herramientas y consejos prácticos"
+    - "25:50 - Futuro del sector"
+    - "30:00 - Conclusiones y despedida"
+
+  conclusion: "Este contenido ha sido generado como ejemplo en formato YAML para ilustrar el resultado esperado."  
+
+  transcript_file: "` + inputPath + `"`
 		if err := utils.WriteTextFile(outputPath, placeholderContent); err != nil {
 			return fmt.Errorf("failed to write output file: %w", err)
 		}
@@ -283,7 +321,7 @@ Parte 2:
 ...
 --------------------------------
 
-Guarda todo el contenido generado con formato Markdown ordenado y profesional, utilizando encabezados, listas y énfasis apropiados para facilitar su lectura y uso.
+Guarda todo el contenido generado con formato YAML.
 `
 }
 

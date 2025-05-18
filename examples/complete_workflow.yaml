@@ -58,7 +58,7 @@ steps:
       targetLanguage: "auto"
       model: "gpt-4o"
       temperature: 0.1
-      maxTokens: 128000        # Maximum response tokens for GPT-4
+      maxTokens: 16384        # Maximum response tokens for GPT-4
       outputSuffix: "_corrected"
       requestTimeoutMs: 300000  # 5 minutes timeout
       chunkSize: 120000        # Process in chunks of 120k tokens

@@ -12,11 +12,12 @@ import (
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/addtext"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/chatgpt"
-	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/extract"
+	extract "github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/extract_audio"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/extractshorts"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/format"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/split"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/transcribe"
+	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules/youtube"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/utils"
 
 	"gopkg.in/yaml.v3"
@@ -134,6 +135,10 @@ var ModuleIORegistry = map[string]ModuleIO{
 	"addtext": {
 		InputPatterns:  []string{"*.yaml", "*.mp4", "*.mov", "*.avi", "*.mkv", "*.webm"},
 		OutputPatterns: []string{"shorts_with_text/*"},
+	},
+	"uploadyoutubeshorts": {
+		InputPatterns:  []string{"*.yaml", "*.mp4"},
+		OutputPatterns: []string{"*.json"}, // For storing upload status and metadata
 	},
 }
 
@@ -690,6 +695,7 @@ func registerModules(registry *modules.ModuleRegistry) {
 	registry.Register(chatgpt.NewShorts())
 	registry.Register(extractshorts.New())
 	registry.Register(addtext.New())
+	registry.Register(youtube.NewUploadYouTubeShorts())
 }
 
 // SetInputPath overrides the input path defined in the workflow
