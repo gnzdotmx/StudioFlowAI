@@ -8,23 +8,26 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
-	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules"
+	modules "github.com/gnzdotmx/studioflowai/studioflowai/internal/mod"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/utils"
 	"gopkg.in/yaml.v3"
 )
+
+// execCommand allows us to mock exec.Command in tests
+var execCommand = exec.CommandContext
 
 // Module implements short video extraction functionality
 type Module struct{}
 
 // Params contains the parameters for short video extraction
 type Params struct {
-	Input         string `json:"input"`         // Path to shorts_suggestions.yaml file
-	Output        string `json:"output"`        // Path to output directory
-	VideoFile     string `json:"videoFile"`     // Path to the source video file
-	FFmpegParams  string `json:"ffmpegParams"`  // Additional parameters for FFmpeg
-	InputFileName string `json:"inputFileName"` // Specific input file name to process
-	QuietFlag     bool   `json:"quietFlag"`     // Suppress ffmpeg output (default: true)
+	Input        string `json:"input"`        // Path to shorts_suggestions.yaml file
+	Output       string `json:"output"`       // Path to output directory
+	VideoFile    string `json:"videoFile"`    // Path to the source video file
+	FFmpegParams string `json:"ffmpegParams"` // Additional parameters for FFmpeg
+	QuietFlag    bool   `json:"quietFlag"`    // Suppress ffmpeg output (default: true)
 }
 
 // ShortsData represents the structure of the shorts_suggestions.yaml file
@@ -43,13 +46,13 @@ type ShortClip struct {
 }
 
 // New creates a new extract shorts module
-func New() *Module {
+func New() modules.Module {
 	return &Module{}
 }
 
 // Name returns the module name
 func (m *Module) Name() string {
-	return "extractshorts"
+	return "extract_shorts"
 }
 
 // Validate checks if the parameters are valid
@@ -60,7 +63,7 @@ func (m *Module) Validate(params map[string]interface{}) error {
 	}
 
 	// Validate input path
-	if err := utils.ValidateInputPath(p.Input, p.Output, p.InputFileName); err != nil {
+	if err := utils.ValidateInputPath(p.Input, p.Output, ""); err != nil {
 		return err
 	}
 
@@ -79,43 +82,113 @@ func (m *Module) Validate(params map[string]interface{}) error {
 		return err
 	}
 
+	// Validate YAML file content
+	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
+	if _, err := m.readShortsFile(resolvedInput); err != nil {
+		return fmt.Errorf("invalid shorts file: %w", err)
+	}
+
 	return nil
 }
 
 // Execute extracts short video clips based on suggestions
-func (m *Module) Execute(ctx context.Context, params map[string]interface{}) error {
+func (m *Module) Execute(ctx context.Context, params map[string]interface{}) (modules.ModuleResult, error) {
 	var p Params
 	if err := modules.ParseParams(params, &p); err != nil {
-		return err
+		return modules.ModuleResult{}, err
 	}
 
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(p.Output, 0755); err != nil {
-		return fmt.Errorf("failed to create output directory: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	// Resolve the input path if it contains ${output}
 	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
 
-	// If input is a directory and we have a specific input filename, join them
-	if fileInfo, err := os.Stat(resolvedInput); err == nil && fileInfo.IsDir() && p.InputFileName != "" {
-		resolvedInput = filepath.Join(resolvedInput, p.InputFileName)
-	}
-
 	// Read and parse the shorts suggestions YAML file
 	shortsData, err := m.readShortsFile(resolvedInput)
 	if err != nil {
-		return err
+		return modules.ModuleResult{}, err
 	}
+
+	// Track extracted clips
+	extractedClips := make(map[string]string)
+	clipStats := make([]map[string]interface{}, 0)
 
 	// Process each short clip
 	for _, short := range shortsData.Shorts {
-		if err := m.extractShortClip(ctx, short, p); err != nil {
-			return err
+		clipPath, err := m.extractShortClip(ctx, short, p)
+		if err != nil {
+			return modules.ModuleResult{}, err
 		}
+
+		clipName := filepath.Base(clipPath)
+		extractedClips[clipName] = clipPath
+		clipStats = append(clipStats, map[string]interface{}{
+			"title":       short.Title,
+			"start_time":  short.StartTime,
+			"end_time":    short.EndTime,
+			"output_file": clipPath,
+		})
 	}
 
-	return nil
+	return modules.ModuleResult{
+		Outputs: extractedClips,
+		Statistics: map[string]interface{}{
+			"input_file":    resolvedInput,
+			"source_video":  p.VideoFile,
+			"clips_count":   len(shortsData.Shorts),
+			"clips_details": clipStats,
+			"ffmpeg_params": p.FFmpegParams,
+			"process_time":  time.Now().Format(time.RFC3339),
+		},
+	}, nil
+}
+
+// GetIO returns the module's input/output specification
+func (m *Module) GetIO() modules.ModuleIO {
+	return modules.ModuleIO{
+		RequiredInputs: []modules.ModuleInput{
+			{
+				Name:        "input",
+				Description: "Path to shorts suggestions YAML file",
+				Patterns:    []string{".yaml"},
+				Type:        string(modules.InputTypeFile),
+			},
+			{
+				Name:        "output",
+				Description: "Path to output directory",
+				Type:        string(modules.InputTypeDirectory),
+			},
+			{
+				Name:        "videoFile",
+				Description: "Path to source video file",
+				Patterns:    []string{".mp4", ".mov"},
+				Type:        string(modules.InputTypeFile),
+			},
+		},
+		OptionalInputs: []modules.ModuleInput{
+			{
+				Name:        "ffmpegParams",
+				Description: "Additional FFmpeg parameters",
+				Type:        string(modules.InputTypeData),
+			},
+			{
+				Name:        "quietFlag",
+				Description: "Suppress FFmpeg output",
+				Type:        string(modules.InputTypeData),
+			},
+		},
+		ProducedOutputs: []modules.ModuleOutput{
+			{
+				Name:        "clips",
+				Description: "Extracted video clips",
+				Patterns:    []string{".mp4"},
+				Type:        string(modules.OutputTypeFile),
+			},
+		},
+	}
 }
 
 // readShortsFile reads and parses the shorts suggestions YAML file
@@ -143,7 +216,7 @@ func (m *Module) readShortsFile(inputPath string) (*ShortsData, error) {
 }
 
 // extractShortClip extracts a single short video clip
-func (m *Module) extractShortClip(ctx context.Context, short ShortClip, p Params) error {
+func (m *Module) extractShortClip(ctx context.Context, short ShortClip, p Params) (string, error) {
 	// Convert startTime and endTime to HHMMSS format for filename
 	startTimeHHMMSS := convertToHHMMSS(short.StartTime)
 	endTimeHHMMSS := convertToHHMMSS(short.EndTime)
@@ -177,7 +250,7 @@ func (m *Module) extractShortClip(ctx context.Context, short ShortClip, p Params
 	args = append(args, outputPath)
 
 	// Prepare the command
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := execCommand(ctx, "ffmpeg", args...)
 
 	// Configure output handling based on quiet mode
 	var stderr bytes.Buffer
@@ -197,11 +270,11 @@ func (m *Module) extractShortClip(ctx context.Context, short ShortClip, p Params
 			// Log the error output if we captured it
 			utils.LogError("FFmpeg error: %s", stderr.String())
 		}
-		return fmt.Errorf("ffmpeg command failed: %w", err)
+		return "", fmt.Errorf("ffmpeg command failed: %w", err)
 	}
 
 	utils.LogSuccess("Extracted: %s", outputFilename)
-	return nil
+	return outputPath, nil
 }
 
 // convertToHHMMSS converts a timestamp to HHMMSS format

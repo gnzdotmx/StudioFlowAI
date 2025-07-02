@@ -1,10 +1,10 @@
-introduction: "Analiza el siguiente script de entrevista y genera contenido optimizado para maximizar el alcance y engagement en YouTube. Por favor proporciona todos los siguientes elementos:"
+introduction: "Analiza el siguiente contenido y genera material optimizado para maximizar el alcance y engagement en YouTube. Por favor proporciona todos los siguientes elementos:"
 
 title:
   length: "50-60 caracteres"
   description: "Crea un título impactante y optimizado para SEO que:"
   criteria:
-    - "Capture la esencia principal de la entrevista"
+    - "Capture la esencia principal del contenido"
     - "Incluya términos de búsqueda relevantes y populares"
     - "Sea conciso pero descriptivo"
     - "Despierte curiosidad e interés inmediato"
@@ -14,7 +14,7 @@ description:
   description: "Elabora una descripción atractiva que:"
   criteria:
     - "Comience con un gancho poderoso en los primeros 2-3 renglones (visible en la vista previa)"
-    - "Resuma los temas principales y aprendizajes clave de la entrevista"
+    - "Resuma los puntos principales y aprendizajes clave del contenido"
     - "Incluya emojis estratégicamente colocados para mejorar la legibilidad y el atractivo visual"
     - "Incorpore llamadas a la acción claras (suscribirse, comentar, etc.)"
     - "Incluya hashtags relevantes al final (máximo 5-7)"
@@ -27,7 +27,7 @@ social_media:
     - "Una versión para Instagram/Facebook (150-200 palabras)"
     - "Una versión para LinkedIn con enfoque profesional (200-250 palabras)"
   requirements:
-    - "Los puntos clave más interesantes/controversiales de la entrevista"
+    - "Los puntos clave más interesantes/controversiales del contenido"
     - "Emojis relevantes para aumentar el engagement"
     - "Un gancho fuerte que invite a ver el video completo"
 
@@ -45,13 +45,13 @@ timeline:
   criteria:
     - "Divida el contenido en secciones claras para navegación fácil"
     - "Incluya una breve descripción del tema de cada sección usando SEO"
-    - "Destaque momentos clave/revelaciones importantes"
+    - "Destaque momentos clave/puntos importantes"
   output_format_example: |
     Timeline:
-    00:00 - Introducción y bienvenida
-    05:32 - Primer tema importante
+    00:00 - Introducción
+    05:32 - Primer tema principal
     ...
-    07:00 - Continuación del tema X
-    01:03:45 - Despedida y cierre
+    07:00 - Desarrollo del tema X
+    01:03:45 - Conclusión y cierre
 
 conclusion: "IMPORTANT: Your response MUST begin with the required YAML format, without prior explanations." 

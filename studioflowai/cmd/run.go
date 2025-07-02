@@ -6,7 +6,7 @@ import (
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/config"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/utils"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/validator"
-	"github.com/gnzdotmx/studioflowai/studioflowai/pkg/workflow"
+	"github.com/gnzdotmx/studioflowai/studioflowai/internal/workflow"
 
 	"github.com/spf13/cobra"
 )

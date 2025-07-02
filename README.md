@@ -11,6 +11,10 @@
 
 StudioFlowAI is a powerful video processing workflow automation tool that helps content creators streamline their video production process. It provides an end-to-end solution for video processing, transcription, content generation, and social media optimization.
 
+<div align="center">
+<img src="./docs/media/demo.gif" alt="StudioFlowAI" width="70%" height="70%">
+</div>
+
 ## ✨ Features
 
 - 🎵 **Audio Extraction**: Convert video to high-quality audio
@@ -31,6 +35,9 @@ StudioFlowAI is a powerful video processing workflow automation tool that helps 
 - 🔸 [FFmpeg](https://ffmpeg.org/download.html)
 - 🔸 [Whisper](https://github.com/openai/whisper?tab=readme-ov-file#setup)
 - 🔸 OpenAI API key (for ChatGPT correction and social media content generation)
+
+For better performance on M chips, you can install Whisper-cli:
+- 🔸 [Whisper-cli](https://github.com/ggml-org/whisper.cpp)
 
 ### Installation
 
@@ -179,6 +186,9 @@ For more examples, check the [examples folder](examples).
 
 ### YouTube Integration
 - **UploadYouTubeShorts**: Automatically upload and schedule YouTube Shorts with tags, descriptions, and playlist management
+
+### TikTok Integration
+- **UploadTikTokShorts**: Automatically upload and schedule TikTok videos with tags, descriptions, and related video integration
 
 > 📚 For detailed documentation of each module, including setup instructions, configuration options, and best practices, please refer to the [./docs](./docs) folder.
 

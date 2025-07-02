@@ -16,7 +16,11 @@ func IsTextFile(filePath string) bool {
 		LogError("Error opening file %s: %v", filePath, err)
 		return false
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			LogWarning("Failed to close file: %v", err)
+		}
+	}()
 
 	// Read the first 512 bytes to determine content type
 	buffer := make([]byte, 512)
@@ -43,7 +47,11 @@ func ReadTextFile(filePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			LogWarning("Failed to close file: %v", err)
+		}
+	}()
 
 	var lines []string
 	scanner := bufio.NewScanner(f)
@@ -65,7 +73,11 @@ func WriteTextFile(filePath string, content string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			LogWarning("Failed to close file: %v", err)
+		}
+	}()
 
 	writer := bufio.NewWriter(f)
 	if _, err := writer.WriteString(content); err != nil {
@@ -90,4 +102,84 @@ func ExpandHomeDir(path string) (string, error) {
 		return filepath.Join(home, path[2:]), nil
 	}
 	return path, nil
+}
+
+// CopyFile copies a file from src to dst
+func CopyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open source file: %w", err)
+	}
+	defer func() {
+		if err := sourceFile.Close(); err != nil {
+			LogWarning("Failed to close source file: %v", err)
+		}
+	}()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer func() {
+		if err := destFile.Close(); err != nil {
+			LogWarning("Failed to close destination file: %v", err)
+		}
+	}()
+
+	if _, err := io.Copy(destFile, sourceFile); err != nil {
+		return fmt.Errorf("failed to copy file contents: %w", err)
+	}
+
+	return nil
+}
+
+// LoadEnvFile loads environment variables from .env file in the current directory
+func LoadEnvFile() error {
+	// Try to open .env file
+	envFile, err := os.Open(".env")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("no .env file found in current directory")
+		}
+		return fmt.Errorf("failed to open .env file: %w", err)
+	}
+	defer func() {
+		if err := envFile.Close(); err != nil {
+			LogWarning("Failed to close env file: %v", err)
+		}
+	}()
+
+	// Read file line by line
+	scanner := bufio.NewScanner(envFile)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Split on first = sign
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue // Skip malformed lines
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// Remove quotes if present
+		value = strings.Trim(value, `"'`)
+
+		// Set environment variable
+		if err := os.Setenv(key, value); err != nil {
+			return fmt.Errorf("failed to set environment variable %s: %w", key, err)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading .env file: %w", err)
+	}
+
+	return nil
 }

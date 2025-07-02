@@ -1,0 +1,20 @@
+all: false
+dir: "{{.InterfaceDir}}/mocks"
+filename: "mock_{{.InterfaceName}}.go"
+force-file-write: true
+formatter: goimports
+log-level: info
+structname: "{{.Mock}}{{.InterfaceName}}"
+pkgname: "{{.SrcPackageName}}"
+recursive: false
+template: testify
+packages:
+  github.com/gnzdotmx/studioflowai/studioflowai/internal/services/chatgpt:
+    config:
+      all: true
+  github.com/gnzdotmx/studioflowai/studioflowai/internal/services/tiktok:
+    config:
+      all: true
+  github.com/gnzdotmx/studioflowai/studioflowai/internal/services/youtube:
+    config:
+      all: true

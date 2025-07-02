@@ -1,4 +1,4 @@
-package extract
+package extractaudio
 
 import (
 	"context"
@@ -7,9 +7,12 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules"
+	modules "github.com/gnzdotmx/studioflowai/studioflowai/internal/mod"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/utils"
 )
+
+// execCommand allows us to mock exec.Command in tests
+var execCommand = exec.Command
 
 // Module implements the audio extraction functionality
 type Module struct{}
@@ -24,13 +27,13 @@ type Params struct {
 }
 
 // New creates a new extract module
-func New() *Module {
+func New() modules.Module {
 	return &Module{}
 }
 
 // Name returns the module name
 func (m *Module) Name() string {
-	return "extract"
+	return "extractaudio"
 }
 
 // Validate checks if the parameters are valid
@@ -77,10 +80,10 @@ func (m *Module) Validate(params map[string]interface{}) error {
 }
 
 // Execute extracts audio from a video file or processes multiple files in a directory
-func (m *Module) Execute(ctx context.Context, params map[string]interface{}) error {
+func (m *Module) Execute(ctx context.Context, params map[string]interface{}) (modules.ModuleResult, error) {
 	var p Params
 	if err := modules.ParseParams(params, &p); err != nil {
-		return err
+		return modules.ModuleResult{}, err
 	}
 
 	// Set default values
@@ -91,37 +94,42 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 		p.Channels = 1
 	}
 
+	// Ensure we have a valid output directory
+	if p.Output == "" {
+		return modules.ModuleResult{}, fmt.Errorf("output directory path is required")
+	}
+
 	// Resolve the input path if it contains ${output}
 	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
 
 	// Check if input is a directory or a file
 	fileInfo, err := os.Stat(resolvedInput)
 	if err != nil {
-		return fmt.Errorf("failed to access input: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("failed to access input: %w", err)
 	}
 
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(p.Output, 0755); err != nil {
-		return fmt.Errorf("failed to create output directory: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	if fileInfo.IsDir() {
 		// Process all video files in the directory
-		return m.processDirectory(ctx, p)
+		return m.processDirectory(p)
 	}
 
 	// Process a single file
-	return m.processFile(ctx, resolvedInput, p)
+	return m.processFile(resolvedInput, p)
 }
 
 // processDirectory processes all video files in a directory
-func (m *Module) processDirectory(ctx context.Context, p Params) error {
+func (m *Module) processDirectory(p Params) (modules.ModuleResult, error) {
 	// Resolve the input path if it contains ${output}
 	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
 
 	entries, err := os.ReadDir(resolvedInput)
 	if err != nil {
-		return fmt.Errorf("failed to read directory: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("failed to read directory: %w", err)
 	}
 
 	for _, entry := range entries {
@@ -136,16 +144,18 @@ func (m *Module) processDirectory(ctx context.Context, p Params) error {
 		}
 
 		inputPath := filepath.Join(resolvedInput, filename)
-		if err := m.processFile(ctx, inputPath, p); err != nil {
-			return err
+		result, err := m.processFile(inputPath, p)
+		if err != nil {
+			return modules.ModuleResult{}, err
 		}
+		return result, nil
 	}
 
-	return nil
+	return modules.ModuleResult{}, nil
 }
 
 // processFile extracts audio from a single video file
-func (m *Module) processFile(ctx context.Context, filePath string, p Params) error {
+func (m *Module) processFile(filePath string, p Params) (modules.ModuleResult, error) {
 	var audioPath string
 
 	if p.OutputName != "" {
@@ -161,8 +171,7 @@ func (m *Module) processFile(ctx context.Context, filePath string, p Params) err
 	utils.LogVerbose("Extracting audio from %s to %s", filePath, audioPath)
 
 	// Extract audio with ffmpeg
-	cmd := exec.CommandContext(
-		ctx,
+	cmd := execCommand(
 		"ffmpeg",
 		"-i", filePath,
 		"-vn",
@@ -179,9 +188,57 @@ func (m *Module) processFile(ctx context.Context, filePath string, p Params) err
 	cmd.Stderr = nil
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg command failed: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("ffmpeg command failed: %w", err)
 	}
 
 	utils.LogSuccess("Successfully extracted audio to %s", audioPath)
-	return nil
+	return modules.ModuleResult{
+		Outputs: map[string]string{
+			"audio": audioPath,
+		},
+	}, nil
+}
+
+// GetIO returns the module's input/output specification
+func (m *Module) GetIO() modules.ModuleIO {
+	return modules.ModuleIO{
+		RequiredInputs: []modules.ModuleInput{
+			{
+				Name:        "input",
+				Description: "Path to input video file or directory",
+				Patterns:    []string{".mp4", ".mov"},
+				Type:        string(modules.InputTypeFile),
+			},
+			{
+				Name:        "output",
+				Description: "Path to output directory",
+				Type:        string(modules.InputTypeDirectory),
+			},
+		},
+		OptionalInputs: []modules.ModuleInput{
+			{
+				Name:        "outputName",
+				Description: "Custom output filename",
+				Type:        string(modules.InputTypeData),
+			},
+			{
+				Name:        "sampleRate",
+				Description: "Sample rate in Hz (default: 16000)",
+				Type:        string(modules.InputTypeData),
+			},
+			{
+				Name:        "channels",
+				Description: "Number of audio channels (default: 1)",
+				Type:        string(modules.InputTypeData),
+			},
+		},
+		ProducedOutputs: []modules.ModuleOutput{
+			{
+				Name:        "audio",
+				Description: "Extracted audio file",
+				Patterns:    []string{".wav", ".mp3", ".m4a", ".aac"},
+				Type:        string(modules.OutputTypeFile),
+			},
+		},
+	}
 }

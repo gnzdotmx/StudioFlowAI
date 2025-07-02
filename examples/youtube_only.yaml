@@ -1,0 +1,32 @@
+name: YouTube Upload Workflow
+description: Process and upload shorts to YouTube
+
+steps:
+  - name: List YouTube Shorts
+    module: uploadyoutubeshorts
+    parameters:
+      # Input: Shorts suggestions file from previous workflow
+      input: "${output}/shorts_suggestions.yaml"
+      # Output: Directory for any generated files
+      output: "${output}"
+      # Path where the short videos are stored
+      storedShortsPath: "./tests/output/"
+      # Google Cloud credentials file (update this path to where you saved credentials.json)
+      credentials: "./credentials.json"
+      # Default privacy status for videos
+      privacyStatus: "private"
+      # Video category ID (22 is for People & Blogs)
+      categoryId: "22"
+      # Schedule videos every N days (e.g., 2 for every other day)
+      schedulePeriodicity: 2
+      # Time to schedule videos (UTC time)
+      scheduleTime: "14:00" 
+      # Maximum number of days to search for available slots
+      maxAttempts: 60
+      # Start date for scheduling (format: YYYY-MM-DD)
+      startDate: "2025-06-09"
+      # YouTube playlist ID where videos will be published. This can be found in the URL of the playlist.
+      # https://www.youtube.com/watch?v=pfQUq9RWxWI&list=PL9RL8mlvV8IBs4b08heoAqWFcezByVTrs&ab_channel=Ciberseguridadenespa%C3%B1ol
+      playlistId: "PL9RL8mlvV8IBs4b08heoAqWFcezByVTrs"
+      # Related video ID to link the shorts with the original video
+      relatedVideoId: "ToLk_T2ZyrM" 

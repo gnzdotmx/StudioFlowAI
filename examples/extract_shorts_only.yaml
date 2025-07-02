@@ -1,0 +1,30 @@
+name: Extract Shorts from Video
+description: Extract short video clips based on shorts suggestions
+output: ./tests
+# Results will be stored in a subfolder named like "Extract_Shorts_from_Video-20231015-120530"
+
+steps:
+  - name: Extract Shorts Clips
+    module: extractshorts
+    parameters:
+      # Input: Shorts suggestions YAML file
+      input: "${output}/shorts_suggestions.yaml"  # References output directory
+      # Video file can be specified in three ways:
+      # 1. Via CLI using -i flag: studioflowai run -w extract_shorts.yaml -i ./input/video.mp4
+      # 2. In the workflow file (as shown below)
+      # 3. From a previous step's output in the workflow
+      videoFile: "./tests/video-test.mov"              # Source video file (REQUIRED - replace with your video path)
+      # Output: Shorts clips in output/shorts directory
+      ffmpegParams: "-vf scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1 -c:v libx264 -c:a aac -b:a 128k -b:v 2500k"
+      quietFlag: true                             # Suppress verbose ffmpeg output
+
+# Example usage:
+# 1. Using CLI input:
+#    studioflowai run -w extract_shorts.yaml -i ./input/video.mp4
+#
+# 2. Using workflow videoFile parameter:
+#    studioflowai run -w extract_shorts.yaml
+#
+# 3. As part of a larger workflow:
+#    - First run the shorts module to generate suggestions
+#    - Then run this workflow to extract the clips

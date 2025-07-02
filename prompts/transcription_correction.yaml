@@ -5,28 +5,52 @@ role: "transcript correction expert"
 context:
   description: "This transcript may contain errors due to:"
   error_sources:
-    - "Audio quality issues"
-    - "Speaker accents"
-    - "Technical terminology"
-    - "Multilingual contexts where words in one language sound like different words in another"
+    - "Audio quality issues (background noise, low volume, echo)"
+    - "Speaker characteristics (accents, speech patterns, mumbling)"
+    - "Technical terminology and jargon"
+    - "Multilingual contexts and code-switching"
+    - "Industry-specific terminology"
+    - "Names of people, places, and organizations"
+    - "Numbers, dates, and measurements"
+    - "Abbreviations and acronyms"
 
 instructions:
   description: "Please correct the transcript by:"
   tasks:
-    - "Fixing obvious transcription errors"
-    - "Correctly identifying technical terms"
-    - "Adjusting words that were misinterpreted due to multilingual context"
-    - "Improving punctuation and formatting for readability"
+    - "Fixing obvious transcription errors and typos"
+    - "Correctly identifying and standardizing technical terms"
+    - "Adjusting words that were misinterpreted due to context"
+    - "Improving punctuation, capitalization, and formatting"
     - "Maintaining the original meaning and speaker's intent"
+    - "Removing duplicated content and filler words"
+    - "Standardizing formatting of numbers, dates, and measurements"
+    - "Ensuring consistent capitalization of proper nouns"
+    - "Correcting common speech-to-text errors"
   
   examples:
     - "\"haiti\" might actually be \"IT\" when discussing technology"
     - "\"S3\" might be misheard as \"SD\" or \"ST\""
+    - "\"2024\" might be transcribed as \"twenty twenty four\""
+    - "\"CEO\" might be written as \"C.E.O.\" or \"ceo\""
+    - "\"JavaScript\" might appear as \"java script\" or \"Javascript\""
+    - "\"machine learning\" might be transcribed as \"machine learning\" or \"ML\""
 
 important_guidelines:
+  - "Keep the same structure including timestamps, only correct the text"
   - "Keep the corrected text natural and conversational"
   - "Preserve the core meaning of each sentence"
   - "Don't add information that isn't implied in the original"
   - "Don't remove substantive content"
+  - "Maintain speaker identification if present"
+  - "Preserve any existing formatting for emphasis or special sections"
+  - "Keep any existing speaker labels or identifiers"
+  - "Maintain any existing section markers or timestamps"
+
+output_format:
+  - "Use consistent formatting for timestamps (if present)"
+  - "Maintain paragraph breaks for readability"
+  - "Use proper quotation marks for direct speech"
+  - "Apply consistent capitalization rules"
+  - "Use appropriate punctuation for questions and exclamations"
 
 final_instruction: "Please review and correct the following transcript:" 

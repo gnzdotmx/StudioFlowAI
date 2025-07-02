@@ -1,0 +1,18 @@
+name: TikTok Upload Workflow
+description: Upload and schedule TikTok videos with tags and descriptions
+
+steps:
+  - name: UploadTikTokShorts
+    module: uploadtiktokshorts
+    parameters:
+      input: ${output}/shorts_suggestions.yaml
+      output: ${output}/tiktok_uploads
+      storedShortsPath: "/path/to/shorts/"
+      privacyStatus: "public" 
+      # UTC time in HH:MM format
+      scheduleTime: "15:00"
+      # Schedule videos every N days (e.g., 2 for every other day)
+      schedulePeriodicity: 2
+      maxAttempts: 3
+      # YYYY-MM-DD format 
+      startDate: "2025-05-19" 

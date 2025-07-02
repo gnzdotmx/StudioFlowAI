@@ -1,12 +1,13 @@
 # Project files
 output/
-tests/
 vendor/
-gnzedition
 studioflowaibin
 credentials.json
 examples/gnz_*
 prompts/gnz_*
+notes/
+tests/
+models/ggml*
 
 # Go specific
 *.exe
