@@ -8,6 +8,9 @@ import (
 	"strings"
 )
 
+// ExecLookPath allows us to mock exec.LookPath in tests
+var ExecLookPath = exec.LookPath
+
 // ValidationError represents a validation error with context
 type ValidationError struct {
 	Field   string
@@ -110,7 +113,7 @@ func ValidateVideoFile(videoFile string) error {
 	}
 
 	// Check if FFmpeg is installed
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
+	if _, err := ExecLookPath("ffmpeg"); err != nil {
 		return &ValidationError{
 			Field:   "ffmpeg",
 			Message: "ffmpeg not found in PATH",
@@ -131,7 +134,7 @@ func ResolveOutputPath(path, outputDir string) string {
 
 // ValidateRequiredDependency checks if a required command is available
 func ValidateRequiredDependency(cmd string) error {
-	if _, err := exec.LookPath(cmd); err != nil {
+	if _, err := ExecLookPath(cmd); err != nil {
 		return &ValidationError{
 			Field:   cmd,
 			Message: fmt.Sprintf("%s not found in PATH", cmd),

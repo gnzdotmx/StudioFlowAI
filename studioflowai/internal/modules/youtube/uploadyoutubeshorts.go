@@ -7,17 +7,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules"
+	modules "github.com/gnzdotmx/studioflowai/studioflowai/internal/mod"
+	youtubesvc "github.com/gnzdotmx/studioflowai/studioflowai/internal/services/youtube"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/utils"
 	"google.golang.org/api/youtube/v3"
-	"gopkg.in/yaml.v3"
 )
 
-// UploadYouTubeShortsModule implements YouTube shorts upload functionality
-type UploadYouTubeShortsModule struct{}
+// Module implements YouTube shorts upload functionality
+type Module struct {
+	youtubeService youtubesvc.YouTubeService
+}
 
-// UploadYouTubeShortsParams contains the parameters for YouTube shorts upload operations
-type UploadYouTubeShortsParams struct {
+// Params contains the parameters for YouTube shorts upload operations
+type Params struct {
 	Input               string `json:"input"`               // Path to shorts suggestions YAML file
 	Output              string `json:"output"`              // Path to output directory
 	StoredShortsPath    string `json:"storedShortsPath"`    // Path where the short videos are stored
@@ -32,19 +34,21 @@ type UploadYouTubeShortsParams struct {
 	RelatedVideoID      string `json:"relatedVideoId"`      // ID of the related video to link with shorts
 }
 
-// NewUploadYouTubeShorts creates a new YouTube shorts upload module
-func NewUploadYouTubeShorts() modules.Module {
-	return &UploadYouTubeShortsModule{}
+// New creates a new YouTube shorts upload module
+func New() modules.Module {
+	return &Module{
+		youtubeService: &youtubesvc.Service{},
+	}
 }
 
 // Name returns the module name
-func (m *UploadYouTubeShortsModule) Name() string {
+func (m *Module) Name() string {
 	return "uploadyoutubeshorts"
 }
 
 // Validate checks if the parameters are valid
-func (m *UploadYouTubeShortsModule) Validate(params map[string]interface{}) error {
-	var p UploadYouTubeShortsParams
+func (m *Module) Validate(params map[string]interface{}) error {
+	var p Params
 	if err := modules.ParseParams(params, &p); err != nil {
 		return err
 	}
@@ -57,6 +61,11 @@ func (m *UploadYouTubeShortsModule) Validate(params map[string]interface{}) erro
 	// Validate output path
 	if err := utils.ValidateOutputPath(p.Output); err != nil {
 		return err
+	}
+
+	// Validate storedShortsPath
+	if p.StoredShortsPath == "" {
+		return fmt.Errorf("storedShortsPath is required")
 	}
 
 	// Validate credentials file
@@ -90,10 +99,10 @@ func (m *UploadYouTubeShortsModule) Validate(params map[string]interface{}) erro
 }
 
 // Execute performs YouTube operations
-func (m *UploadYouTubeShortsModule) Execute(ctx context.Context, params map[string]interface{}) error {
-	var p UploadYouTubeShortsParams
+func (m *Module) Execute(ctx context.Context, params map[string]interface{}) (modules.ModuleResult, error) {
+	var p Params
 	if err := modules.ParseParams(params, &p); err != nil {
-		return err
+		return modules.ModuleResult{}, err
 	}
 
 	// Set default maxAttempts if not provided
@@ -109,110 +118,89 @@ func (m *UploadYouTubeShortsModule) Execute(ctx context.Context, params map[stri
 	// Expand home directory if present
 	expandedCredentials, err := utils.ExpandHomeDir(p.Credentials)
 	if err != nil {
-		return fmt.Errorf("failed to expand home directory: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("failed to expand home directory: %w", err)
 	}
 	p.Credentials = expandedCredentials
 
 	// Initialize YouTube service
-	service, err := m.initializeYouTubeService(ctx, p.Credentials)
+	service, err := m.youtubeService.InitializeYouTubeService(ctx, p.Credentials)
 	if err != nil {
-		return fmt.Errorf("failed to initialize YouTube service: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("failed to initialize YouTube service: %w", err)
 	}
 
 	// Read and list scheduled videos
-	scheduledVideos, err := m.readScheduledVideos(ctx, service)
+	scheduledVideos, err := m.youtubeService.ReadScheduledVideos(ctx, service)
 	if err != nil {
-		return fmt.Errorf("failed to read scheduled videos: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("failed to read scheduled videos: %w", err)
 	}
-
-	// if err := m.listScheduledVideos(scheduledVideos); err != nil {
-	// 	return fmt.Errorf("failed to list scheduled videos: %w", err)
-	// }
 
 	// Read shorts suggestions file
-	shortsData, err := m.readShortsFile(p.Input)
+	shortsData, err := utils.ReadShortsFile(p.Input)
 	if err != nil {
-		return fmt.Errorf("failed to read shorts suggestions file: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("failed to read shorts suggestions file: %w", err)
 	}
 
-	// // List available shorts
-	// if err := m.listShorts(ctx, service, shortsData); err != nil {
-	// 	return fmt.Errorf("failed to list available shorts: %w", err)
-	// }
-
 	// Find available times for each short
-	var videoUploads []VideoUpload
-	videoUploads, err = m.findAvailability(scheduledVideos, shortsData, p.SchedulePeriodicity, p.ScheduleTime, p.MaxAttempts, p.StartDate, p.PlaylistID)
+	videoUploads, err := m.youtubeService.FindAvailability(scheduledVideos, shortsData, p.SchedulePeriodicity, p.ScheduleTime, p.MaxAttempts, p.StartDate, p.PlaylistID)
 	if err != nil {
-		return fmt.Errorf("failed to find availability: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("failed to find availability: %w", err)
 	}
 
 	// Collect tags and related video ID
-	videoUploads, err = m.collectTagsAndRelatedVideo(ctx, service, videoUploads, p.RelatedVideoID)
+	videoUploads, err = m.collectTagsAndRelatedVideo(service, videoUploads, p.RelatedVideoID)
 	if err != nil {
-		return fmt.Errorf("failed to collect tags and related video: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("failed to collect tags and related video: %w", err)
 	}
 
 	// List available times
-	if err := m.listAvailableTimes(videoUploads); err != nil {
-		return fmt.Errorf("failed to list available times: %w", err)
+	if err := m.youtubeService.ListAvailableTimes(videoUploads); err != nil {
+		return modules.ModuleResult{}, fmt.Errorf("failed to list available times: %w", err)
 	}
 
 	// Upload the videos
-	if err := m.uploadVideo(ctx, service, videoUploads, p.PrivacyStatus, p.CategoryID, p.StoredShortsPath); err != nil {
-		return fmt.Errorf("failed to upload videos: %w", err)
+	if err := m.youtubeService.UploadVideo(ctx, service, videoUploads, p.PrivacyStatus, p.CategoryID, p.StoredShortsPath); err != nil {
+		return modules.ModuleResult{}, fmt.Errorf("failed to upload videos: %w", err)
 	}
 
-	return nil
-}
-
-// readShortsFile reads and parses the shorts_suggestions.yaml file
-func (m *UploadYouTubeShortsModule) readShortsFile(filePath string) (*ShortsData, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
+	// Prepare result
+	result := modules.ModuleResult{
+		Outputs: map[string]string{
+			"uploadStatus": fmt.Sprintf("%s/youtube_upload_status.json", p.Output),
+		},
+		Metadata: map[string]interface{}{
+			"totalVideos": len(videoUploads),
+			"startDate":   p.StartDate,
+			"endDate":     time.Now().UTC().Format("2006-01-02"),
+		},
+		Statistics: map[string]interface{}{
+			"uploadedVideos": len(videoUploads),
+			"scheduleSpan":   p.MaxAttempts,
+		},
+		NextModules: []string{}, // No next modules for this terminal operation
 	}
 
-	var shortsData ShortsData
-	if err := yaml.Unmarshal(data, &shortsData); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %w", err)
-	}
-
-	return &shortsData, nil
-}
-
-// listShorts lists available shorts that can be uploaded
-func (m *UploadYouTubeShortsModule) listShorts(ctx context.Context, service *youtube.Service, shortsData *ShortsData) error {
-	utils.LogInfo("Available shorts for upload:")
-	for i, short := range shortsData.Shorts {
-		utils.LogInfo("%d. Title: %s", i+1, short.ShortTitle)
-		utils.LogInfo("   Duration: %s - %s", short.StartTime, short.EndTime)
-		utils.LogInfo("   Description: %s", short.Description)
-		utils.LogInfo("   Tags: %s", short.Tags)
-		utils.LogInfo("---")
-	}
-	return nil
+	return result, nil
 }
 
 // collectTagsAndRelatedVideo adds tags from the related video and adds related video ID to the video uploads
-func (m *UploadYouTubeShortsModule) collectTagsAndRelatedVideo(ctx context.Context, service *youtube.Service, videoUploads []VideoUpload, relatedVideoID string) ([]VideoUpload, error) {
+func (m *Module) collectTagsAndRelatedVideo(service *youtube.Service, videoUploads []youtubesvc.VideoUpload, relatedVideoID string) ([]youtubesvc.VideoUpload, error) {
 	// If no related video ID is provided, just return the uploads as is
 	if relatedVideoID == "" {
 		return videoUploads, nil
 	}
 
 	// Get the related video details to extract tags
-	videoResponse, err := service.Videos.List([]string{"snippet"}).Id(relatedVideoID).Do()
+	video, err := m.youtubeService.GetVideoDetails(context.Background(), service, relatedVideoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get related video details: %w", err)
 	}
 
-	if len(videoResponse.Items) == 0 {
+	if video == nil || video.Snippet == nil {
 		return nil, fmt.Errorf("no video found with ID: %s", relatedVideoID)
 	}
 
 	// Get tags from the related video
-	relatedVideoTags := videoResponse.Items[0].Snippet.Tags
+	relatedVideoTags := video.Snippet.Tags
 	if len(relatedVideoTags) == 0 {
 		utils.LogWarning("No tags found in related video: %s", relatedVideoID)
 	}
@@ -244,4 +232,65 @@ func (m *UploadYouTubeShortsModule) collectTagsAndRelatedVideo(ctx context.Conte
 	}
 
 	return videoUploads, nil
+}
+
+// GetIO returns the module's input/output specification
+func (m *Module) GetIO() modules.ModuleIO {
+	return modules.ModuleIO{
+		RequiredInputs: []modules.ModuleInput{
+			{
+				Name:        "input",
+				Description: "Path to shorts suggestions YAML file",
+				Patterns:    []string{"*.yaml"},
+				Type:        string(modules.InputTypeFile),
+			},
+			{
+				Name:        "storedShortsPath",
+				Description: "Path where the short videos are stored",
+				Patterns:    []string{"*.mp4"},
+				Type:        string(modules.InputTypeDirectory),
+			},
+			{
+				Name:        "credentials",
+				Description: "Path to Google credentials file",
+				Patterns:    []string{"*.json"},
+				Type:        string(modules.InputTypeFile),
+			},
+		},
+		OptionalInputs: []modules.ModuleInput{
+			{
+				Name:        "playlistId",
+				Description: "YouTube playlist ID",
+				Type:        string(modules.InputTypeData),
+			},
+			{
+				Name:        "privacyStatus",
+				Description: "Video privacy status (private, unlisted, public)",
+				Type:        string(modules.InputTypeData),
+			},
+			{
+				Name:        "categoryId",
+				Description: "Video category ID",
+				Type:        string(modules.InputTypeData),
+			},
+			{
+				Name:        "scheduleTime",
+				Description: "Time to schedule videos (24-hour format)",
+				Type:        string(modules.InputTypeData),
+			},
+			{
+				Name:        "relatedVideoId",
+				Description: "ID of the related video to link with shorts",
+				Type:        string(modules.InputTypeData),
+			},
+		},
+		ProducedOutputs: []modules.ModuleOutput{
+			{
+				Name:        "uploadStatus",
+				Description: "JSON file containing upload status for each video",
+				Patterns:    []string{"*.json"},
+				Type:        string(modules.OutputTypeFile),
+			},
+		},
+	}
 }

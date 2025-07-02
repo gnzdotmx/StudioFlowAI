@@ -6,10 +6,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
-	"github.com/gnzdotmx/studioflowai/studioflowai/internal/modules"
+	modules "github.com/gnzdotmx/studioflowai/studioflowai/internal/mod"
 	"github.com/gnzdotmx/studioflowai/studioflowai/internal/utils"
 )
+
+// execCommand allows us to mock exec.Command in tests
+var execCommand = exec.Command
 
 // Module implements audio splitting functionality
 type Module struct{}
@@ -24,13 +28,52 @@ type Params struct {
 }
 
 // New creates a new split module
-func New() *Module {
+func New() modules.Module {
 	return &Module{}
 }
 
 // Name returns the module name
 func (m *Module) Name() string {
 	return "split"
+}
+
+// GetIO returns the module's input/output specification
+func (m *Module) GetIO() modules.ModuleIO {
+	return modules.ModuleIO{
+		RequiredInputs: []modules.ModuleInput{
+			{
+				Name:        "input",
+				Description: "Input audio file or directory",
+				Patterns:    []string{"*.wav", "*.mp3", "*.m4a", "*.aac"},
+				Type:        string(modules.InputTypeFile),
+			},
+		},
+		ProducedOutputs: []modules.ModuleOutput{
+			{
+				Name:        "segments",
+				Description: "Split audio segments",
+				Patterns:    []string{"splited*.wav"},
+				Type:        string(modules.OutputTypeFile),
+			},
+		},
+		OptionalInputs: []modules.ModuleInput{
+			{
+				Name:        "segmentTime",
+				Description: "Segment duration in seconds (default: 1800 = 30 minutes)",
+				Type:        string(modules.InputTypeData),
+			},
+			{
+				Name:        "filePattern",
+				Description: "Output file pattern (default: 'splited%03d')",
+				Type:        string(modules.InputTypeData),
+			},
+			{
+				Name:        "audioFormat",
+				Description: "Output audio format (default: 'wav')",
+				Type:        string(modules.InputTypeData),
+			},
+		},
+	}
 }
 
 // Validate checks if the parameters are valid
@@ -70,10 +113,10 @@ func (m *Module) Validate(params map[string]interface{}) error {
 }
 
 // Execute splits audio files into smaller segments
-func (m *Module) Execute(ctx context.Context, params map[string]interface{}) error {
+func (m *Module) Execute(ctx context.Context, params map[string]interface{}) (modules.ModuleResult, error) {
 	var p Params
 	if err := modules.ParseParams(params, &p); err != nil {
-		return err
+		return modules.ModuleResult{}, err
 	}
 
 	// Set default values
@@ -89,7 +132,7 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(p.Output, 0755); err != nil {
-		return fmt.Errorf("failed to create output directory: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	// Resolve the input path if it contains ${output}
@@ -98,20 +141,40 @@ func (m *Module) Execute(ctx context.Context, params map[string]interface{}) err
 	// Check if input is a directory or a file
 	fileInfo, err := os.Stat(resolvedInput)
 	if err != nil {
-		return fmt.Errorf("failed to access input: %w", err)
+		return modules.ModuleResult{}, fmt.Errorf("failed to access input: %w", err)
 	}
 
 	if fileInfo.IsDir() {
 		// Process all audio files in the directory
-		return m.processDirectory(ctx, p)
+		if err := m.processDirectory(p); err != nil {
+			return modules.ModuleResult{}, err
+		}
+	} else {
+		// Process a single file
+		if err := m.processFile(resolvedInput, p); err != nil {
+			return modules.ModuleResult{}, err
+		}
 	}
 
-	// Process a single file
-	return m.processFile(ctx, resolvedInput, p)
+	// Create result with output information
+	result := modules.ModuleResult{
+		Outputs: map[string]string{
+			"segments": p.Output,
+		},
+		Metadata: map[string]interface{}{
+			"segmentTime": p.SegmentTime,
+			"audioFormat": p.AudioFormat,
+		},
+		Statistics: map[string]interface{}{
+			"inputFile": resolvedInput,
+		},
+	}
+
+	return result, nil
 }
 
 // processDirectory processes all audio files in a directory
-func (m *Module) processDirectory(ctx context.Context, p Params) error {
+func (m *Module) processDirectory(p Params) error {
 	// Resolve the input path if it contains ${output}
 	resolvedInput := utils.ResolveOutputPath(p.Input, p.Output)
 
@@ -120,19 +183,34 @@ func (m *Module) processDirectory(ctx context.Context, p Params) error {
 		return fmt.Errorf("failed to read directory: %w", err)
 	}
 
+	// Define supported input formats
+	supportedFormats := map[string]bool{
+		".wav": true,
+		".mp3": true,
+		".m4a": true,
+		".aac": true,
+	}
+
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 
 		filename := entry.Name()
-		ext := filepath.Ext(filename)
-		if ext != "."+p.AudioFormat {
+		ext := strings.ToLower(filepath.Ext(filename))
+
+		// Skip files that don't match the requested output format
+		if ext != "."+strings.ToLower(p.AudioFormat) {
+			continue
+		}
+
+		// Skip unsupported input formats
+		if !supportedFormats[ext] {
 			continue
 		}
 
 		inputPath := filepath.Join(resolvedInput, filename)
-		if err := m.processFile(ctx, inputPath, p); err != nil {
+		if err := m.processFile(inputPath, p); err != nil {
 			return err
 		}
 	}
@@ -141,14 +219,13 @@ func (m *Module) processDirectory(ctx context.Context, p Params) error {
 }
 
 // processFile splits a single audio file into segments
-func (m *Module) processFile(ctx context.Context, filePath string, p Params) error {
+func (m *Module) processFile(filePath string, p Params) error {
 	outputPattern := filepath.Join(p.Output, p.FilePattern+"."+p.AudioFormat)
 
 	utils.LogVerbose("Splitting %s into segments of %d seconds", filePath, p.SegmentTime)
 
-	// Split audio with ffmpeg
-	cmd := exec.CommandContext(
-		ctx,
+	// Split audio with ffmpeg using the mockable execCommand
+	cmd := execCommand(
 		"ffmpeg",
 		"-i", filePath,
 		"-f", "segment",

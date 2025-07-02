@@ -20,7 +20,7 @@ prompt: |
       startTime: "hh:mm:ss"
       endTime: "hh:mm:ss"
       description: "Descripción detallada que explica por qué este momento es interesante"
-      tags: "#Hashtag1 #Hashtag2 #Hashtag3"
+      tags: "Hashtag1, Hashtag2, Hashtag3"
       short_title: "¿Pregunta o descripción corta que se responde en el video?"
   ```
 
@@ -31,7 +31,7 @@ prompt: |
   - DO NOT INCLUDE COMMENTS like "# Maximum 40 characters" in your final response
   - VERIFY that your YAML is valid before submitting
   - short_title: must be no more than 40 characters, try to be creative and interesting
-  - title:  must be maximum 100 characters including high impact hashtags between the name using #hashtags format
+  - title: must be maximum 100 characters including high impact hashtags between the name using #hashtags format
 
   ## SELECTION CRITERIA (at least TWO):
   - Hook factor: Captures attention in first 3 seconds
@@ -42,13 +42,14 @@ prompt: |
   - Quotable: Contains memorable phrase for text overlay
   - Complete story: Mini-narrative with beginning, development, conclusion
   - Unique perspective: Surprising or uncommon point of view
-  - FOCUS ON WHAT THE INTERVIEWEE IS SAYING, NOT THE HOST
-  - DO NOT INCLUDE QUESTIONS MADE BY THE HOST
-  - DO NOT INCLUDE HOST'S COMMENTS OR THOUGHTS
+  - Key moments: Highlights the most impactful or informative segments
+  - Visual appeal: Contains visually engaging elements or demonstrations
+  - Action-oriented: Shows clear steps, processes, or demonstrations
+  - Educational value: Teaches something specific and valuable
 
   ## MANDATORY FINAL VERIFICATION:
   1. Did you analyze the COMPLETE transcript to the end?
-  2. Did you identify all main topics from the conversation?
+  2. Did you identify all main topics from the content?
   3. Do you have AT LEAST 3 shorts for EACH identified topic?
   4. Is the YAML format EXACTLY as shown in the example?
   5. Does the indentation use TWO SPACES (not tabs)?

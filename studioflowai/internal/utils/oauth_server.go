@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	"golang.org/x/oauth2"
@@ -117,14 +119,47 @@ func (s *OAuthCallbackServer) handleCallback(w http.ResponseWriter, r *http.Requ
 
 	// Respond to the browser
 	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, `
+	if _, err := fmt.Fprintf(w, `
 		<html>
+			<head>
+				<title>Authorization Successful</title>
+				<style>
+					body {
+						font-family: Arial, sans-serif;
+						display: flex;
+						justify-content: center;
+						align-items: center;
+						height: 100vh;
+						margin: 0;
+						background-color: #f0f2f5;
+					}
+					.container {
+						text-align: center;
+						padding: 2rem;
+						background-color: white;
+						border-radius: 8px;
+						box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+					}
+					h1 {
+						color: #1a73e8;
+						margin-bottom: 1rem;
+					}
+					p {
+						color: #5f6368;
+						margin-bottom: 0.5rem;
+					}
+				</style>
+			</head>
 			<body>
-				<h1>Authorization Successful!</h1>
-				<p>You can close this window and return to the application.</p>
+				<div class="container">
+					<h1>Authorization Successful</h1>
+					<p>You can now close this window and return to the application.</p>
+				</div>
 			</body>
 		</html>
-	`)
+	`); err != nil {
+		LogWarning("Failed to write response: %v", err)
+	}
 }
 
 // WaitForCode waits for the authorization code
@@ -141,4 +176,25 @@ func (s *OAuthCallbackServer) Stop() error {
 		s.wg.Wait()
 	}
 	return nil
+}
+
+// GetServerAddr returns the server's address
+func (s *OAuthCallbackServer) GetServerAddr() string {
+	return s.server.Addr
+}
+
+// openURL opens the specified URL in the default browser
+func (s *OAuthCallbackServer) OpenURL(url string) error {
+	var err error
+	switch runtime.GOOS {
+	case "linux":
+		err = exec.Command("xdg-open", url).Start()
+	case "windows":
+		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	case "darwin":
+		err = exec.Command("open", url).Start()
+	default:
+		err = fmt.Errorf("cannot open URL %s on this platform", url)
+	}
+	return err
 }
